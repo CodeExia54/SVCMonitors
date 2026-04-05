@@ -8,18 +8,21 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * LogExporter v8.0 — Export events to CSV or JSON files.
+ * LogExporter v8.1 — Export events to CSV or JSON files into app tmp/cache directory.
  */
 class LogExporter(private val ctx: Context) {
 
     private val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
 
+    private fun exportDir(): File {
+        val dir = File(ctx.cacheDir, "exports")
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
+
     fun exportCsv(events: List<StatusParser.SvcEvent>): File {
         val ts = dateFormat.format(Date())
-        val dir = File("/sdcard/SVCMonitor")
-        if (!dir.exists()) {
-            dir.mkdirs()
-        }
+        val dir = exportDir()
         val file = File(dir, "svc_events_$ts.csv")
 
         file.bufferedWriter().use { w ->
@@ -40,10 +43,7 @@ class LogExporter(private val ctx: Context) {
 
     fun exportJson(events: List<StatusParser.SvcEvent>): File {
         val ts = dateFormat.format(Date())
-        val dir = File("/sdcard/SVCMonitor")
-        if (!dir.exists()) {
-            dir.mkdirs()
-        }
+        val dir = exportDir()
         val file = File(dir, "svc_events_$ts.json")
 
         val arr = JSONArray()

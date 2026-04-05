@@ -2206,7 +2206,7 @@ class MainActivity : AppCompatActivity() {
         try {
             val file = logExporter.exportCsv(events)
             shareFile(file, "text/csv")
-            tvMsg.text = "Tip: CSV exported"
+            tvMsg.text = "Tip: CSV exported to tmp: ${file.absolutePath}"
         } catch (e: Exception) {
             tvMsg.text = "Tip: Export failed: ${e.message}"
         }
@@ -2221,7 +2221,7 @@ class MainActivity : AppCompatActivity() {
         try {
             val file = logExporter.exportJson(events)
             shareFile(file, "application/json")
-            tvMsg.text = "Tip: JSON exported"
+            tvMsg.text = "Tip: JSON exported to tmp: ${file.absolutePath}"
         } catch (e: Exception) {
             tvMsg.text = "Tip: Export failed: ${e.message}"
         }
