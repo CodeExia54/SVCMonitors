@@ -771,7 +771,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         topBar.addView(Button(this).apply {
-            text = "JSON"
+            text = "JSONL"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             isAllCaps = false
             setOnClickListener { exportJson() }
@@ -2219,9 +2219,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
         try {
-            val file = logExporter.exportJson(events)
-            shareFile(file, "application/json")
-            tvMsg.text = "Tip: JSON exported to tmp: ${file.absolutePath}"
+            val file = logExporter.exportJsonlForPc(events)
+            shareFile(file, "application/x-ndjson")
+            tvMsg.text = "Tip: JSONL exported: ${file.absolutePath}"
         } catch (e: Exception) {
             tvMsg.text = "Tip: Export failed: ${e.message}"
         }

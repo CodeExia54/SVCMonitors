@@ -20,6 +20,55 @@ class LogExporter(private val ctx: Context) {
         return dir
     }
 
+    private fun deviceTmpDir(): File = File("/data/local/tmp")
+
+    private fun canWriteToDir(dir: File): Boolean {
+        return try {
+            if (!dir.exists()) return false
+            val probe = File(dir, ".svc_export_probe_${System.currentTimeMillis()}")
+            probe.writeText("ok")
+            probe.delete()
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun escapeJson(value: String): String {
+        return value
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+    }
+
+    private fun toJsonlLine(ev: StatusParser.SvcEvent): String {
+        val bt = ev.bt.joinToString(",")
+        return buildString {
+            append("{\"seq\":").append(ev.seq)
+            append(",\"nr\":").append(ev.nr)
+            append(",\"name\":\"").append(escapeJson(ev.name)).append("\"")
+            append(",\"pid\":").append(ev.pid)
+            append(",\"uid\":").append(ev.uid)
+            append(",\"comm\":\"").append(escapeJson(ev.comm)).append("\"")
+            append(",\"pc\":").append(ev.pc)
+            append(",\"caller\":").append(ev.caller)
+            append(",\"fp\":").append(ev.fp)
+            append(",\"sp\":").append(ev.sp)
+            append(",\"bt\":[").append(bt).append("]")
+            append(",\"clone_fn\":").append(ev.cloneFn)
+            append(",\"a0\":").append(ev.a0)
+            append(",\"a1\":").append(ev.a1)
+            append(",\"a2\":").append(ev.a2)
+            append(",\"a3\":").append(ev.a3)
+            append(",\"a4\":").append(ev.a4)
+            append(",\"a5\":").append(ev.a5)
+            append(",\"desc\":\"").append(escapeJson(ev.desc)).append("\"")
+            append("}\n")
+        }
+    }
+
     fun exportCsv(events: List<StatusParser.SvcEvent>): File {
         val ts = dateFormat.format(Date())
         val dir = exportDir()
@@ -73,5 +122,21 @@ class LogExporter(private val ctx: Context) {
 
         file.writeText(arr.toString(2))
         return file
+    }
+
+    fun exportJsonlForPc(events: List<StatusParser.SvcEvent>): File {
+        val target = if (canWriteToDir(deviceTmpDir())) {
+            File(deviceTmpDir(), "svc_events.jsonl")
+        } else {
+            val ts = dateFormat.format(Date())
+            File(exportDir(), "svc_events_$ts.jsonl")
+        }
+
+        target.bufferedWriter().use { w ->
+            for (ev in events) {
+                w.write(toJsonlLine(ev))
+            }
+        }
+        return target
     }
 }
