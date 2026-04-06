@@ -24,12 +24,12 @@ val unsignedReleaseBuild = providers.gradleProperty("unsignedRelease")
     .orElse(false)
 
 android {
-    namespace = "moe.fuqiuluo.mamu"
+    namespace = "com.svcmonitor.app"
     compileSdk = 36
     buildToolsVersion = "35.0.0"
 
     defaultConfig {
-        applicationId = "moe.fuqiuluo.mamu"
+        applicationId = "com.svcmonitor.app"
         minSdk = 24
         targetSdk = 35
         versionCode = timestampVersionCode.get()

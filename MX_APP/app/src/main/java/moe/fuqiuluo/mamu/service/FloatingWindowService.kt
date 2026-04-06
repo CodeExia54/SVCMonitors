@@ -125,6 +125,7 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
     private val isProcessDialogShowing = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private var svcStateObserveJob: kotlinx.coroutines.Job? = null
+    private var svcOnlyMode = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -154,15 +155,16 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         setupFloatingIcon()
         setupFullscreenView()
 
-        if (!WuwaDriver.loaded) {
-            Toast.makeText(this, "Wuwa driver unavailable. Running in SVC-only mode.", Toast.LENGTH_SHORT).show()
-            Log.w(TAG, "WuwaDriver not loaded, memory features may be unavailable; SVC runtime continues")
+        svcOnlyMode = !WuwaDriver.loaded
+        if (svcOnlyMode) {
+            Toast.makeText(this, "SVC-only mode enabled", Toast.LENGTH_SHORT).show()
+            Log.w(TAG, "WuwaDriver not loaded; legacy memory modules are disabled")
+        } else {
+            initializeControllers()
+            subscribeToUIActionEvents()
+            subscribeToMemoryRangeChangedEvents()
+            subscribeToProcessStateEvents()
         }
-
-        initializeControllers()
-        subscribeToUIActionEvents()
-        subscribeToMemoryRangeChangedEvents()
-        subscribeToProcessStateEvents()
         startSvcRuntime()
 
         // Notify listeners that the overlay has started
@@ -1101,6 +1103,10 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
     }
 
     private fun showFullscreen() {
+        if (svcOnlyMode) {
+            Toast.makeText(this, "Legacy memory UI disabled in SVC mode", Toast.LENGTH_SHORT).show()
+            return
+        }
         // Hide all realtime monitors to reduce interference
         RealtimeMonitorOverlay.hideAll()
 
