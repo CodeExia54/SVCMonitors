@@ -109,6 +109,10 @@ class MainActivity : AppCompatActivity() {
     private var pcServerSocket: java.net.ServerSocket? = null
     private val pcServerClients = ArrayList<java.io.BufferedWriter>(4)
     private var pcServerBacklogLimit = 20000
+    private var bgSvcEnabled = false
+    private var wsRelayEnabled = false
+    private var wsRelayUrl = "ws://127.0.0.1:8080/ws"
+    private var wsRelayDevice = "svc-device"
 
     private data class SensitiveRule(val needle: String, val color: Int)
     private val sensitiveRules by lazy {
@@ -162,6 +166,10 @@ class MainActivity : AppCompatActivity() {
         relayPort = prefs.getInt("pc_relay_port", 5001)
         pcServerEnabled = prefs.getBoolean("pc_server_enabled", false)
         pcServerPort = prefs.getInt("pc_server_port", 8080)
+        bgSvcEnabled = prefs.getBoolean("svc_bg_service_enabled", true)
+        wsRelayEnabled = prefs.getBoolean("svc_ws_enabled", false)
+        wsRelayUrl = prefs.getString("svc_ws_url", "ws://127.0.0.1:8080/ws") ?: "ws://127.0.0.1:8080/ws"
+        wsRelayDevice = prefs.getString("svc_ws_device", "svc-device") ?: "svc-device"
 
         // Pre-build ALL tab views FIRST (before observeViewModel!)
         val dashboardView = buildDashboardTab()
@@ -182,6 +190,7 @@ class MainActivity : AppCompatActivity() {
 
         if (relayEnabled) startRelay()
         if (pcServerEnabled) startPcServer()
+        if (bgSvcEnabled) startBackgroundRelayService()
     }
 
     /* ══════════════════════════════════════════════════════════════
@@ -590,6 +599,53 @@ class MainActivity : AppCompatActivity() {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 ).apply { topMargin = dp(6) }
+            })
+
+            addView(makeDivider())
+            addView(makeLabel("SVC background relay (MX-style stability)"))
+
+            val etWsUrl = EditText(this@MainActivity).apply {
+                hint = "WebSocket URL (ws://host:port/ws)"
+                setText(wsRelayUrl)
+            }
+            addView(etWsUrl)
+
+            val etWsDevice = EditText(this@MainActivity).apply {
+                hint = "Device tag"
+                setText(wsRelayDevice)
+            }
+            addView(etWsDevice)
+
+            addView(Switch(this@MainActivity).apply {
+                text = "Enable WebSocket relay in background service"
+                isChecked = wsRelayEnabled
+                setOnCheckedChangeListener { _, checked ->
+                    wsRelayEnabled = checked
+                    wsRelayUrl = etWsUrl.text.toString().trim().ifBlank { "ws://127.0.0.1:8080/ws" }
+                    wsRelayDevice = etWsDevice.text.toString().trim().ifBlank { "svc-device" }
+                    prefs.edit()
+                        .putBoolean("svc_ws_enabled", checked)
+                        .putString("svc_ws_url", wsRelayUrl)
+                        .putString("svc_ws_device", wsRelayDevice)
+                        .apply()
+                    tvMsg.text = if (checked) "Tip: WebSocket relay enabled in background service" else "Tip: WebSocket relay disabled"
+                }
+            })
+
+            addView(Switch(this@MainActivity).apply {
+                text = "Keep SVC background relay service alive"
+                isChecked = bgSvcEnabled
+                setOnCheckedChangeListener { _, checked ->
+                    bgSvcEnabled = checked
+                    prefs.edit().putBoolean("svc_bg_service_enabled", checked).apply()
+                    if (checked) {
+                        startBackgroundRelayService()
+                        tvMsg.text = "Tip: Background relay service started"
+                    } else {
+                        stopBackgroundRelayService()
+                        tvMsg.text = "Tip: Background relay service stopped"
+                    }
+                }
             })
         })
 
@@ -2570,6 +2626,19 @@ class MainActivity : AppCompatActivity() {
     /* helper for filter tab buttons to launch coroutine */
     private fun MainViewModel.viewModelScope_launch(block: suspend () -> Unit) {
         viewModelScope.launch { block() }
+    }
+
+    private fun startBackgroundRelayService() {
+        val i = Intent(this, BackgroundRelayService::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            startForegroundService(i)
+        } else {
+            startService(i)
+        }
+    }
+
+    private fun stopBackgroundRelayService() {
+        stopService(Intent(this, BackgroundRelayService::class.java))
     }
 
     override fun onDestroy() {
