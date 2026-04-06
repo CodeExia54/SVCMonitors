@@ -6,6 +6,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.InputStreamReader
@@ -24,11 +26,15 @@ import java.io.OutputStreamWriter
 object KpmBridge {
 
     private const val TAG = "KpmBridge"
-    private const val KPATCH = "/data/adb/ap/bin/kpatch"
     private const val MODULE = "svc_monitor"
     private const val OUT_FILE = "/data/local/tmp/svc_out.json"
     private const val EVENT_FILE = "/data/local/tmp/svc_events.bin"
     private var superKey = "XiaoLu0129"
+    private data class KpmCli(val bin: String, val style: String)
+    @Volatile private var cachedKpmCli: KpmCli? = null
+    @Volatile private var ksudEnabled: Boolean = false
+    @Volatile private var ksudTargetUid: Int = -1
+    private val ksudLoggingNrs = linkedSetOf<Int>()
     private val mutex = Mutex()
 
     data class KpmResult(
@@ -81,6 +87,103 @@ object KpmBridge {
         } catch (e: Exception) {
             Pair(-1, (e.message ?: "exec error").toByteArray())
         }
+    }
+
+    private fun resolveKpmCli(): KpmCli? {
+        cachedKpmCli?.let { return it }
+
+        // 1) APatch / KernelPatch classic kpatch tool (needs superkey).
+        val kpatchPathCandidates = listOf(
+            "/data/adb/ap/bin/kpatch",     // APatch
+            "/data/adb/ksu/bin/kpatch",    // Some KSU layouts
+            "/data/adb/ksud/bin/kpatch",   // Some KSU layouts
+            "/data/adb/kpatch/bin/kpatch"  // legacy/custom layouts
+        )
+        for (p in kpatchPathCandidates) {
+            val (code, out) = shellExec("if [ -x '$p' ]; then echo '$p'; fi")
+            if (code == 0 && out.trim().isNotEmpty()) {
+                return KpmCli(p, "kpatch").also { cachedKpmCli = it }
+            }
+        }
+
+        // 2) KernelSU userspace ksud (no superkey; uses `ksud kpm control`).
+        val ksudPathCandidates = listOf(
+            "/data/adb/ksu/bin/ksud",
+            "/data/adb/ksud/bin/ksud"
+        )
+        for (p in ksudPathCandidates) {
+            val (code, out) = shellExec("if [ -x '$p' ]; then echo '$p'; fi")
+            if (code == 0 && out.trim().isNotEmpty()) {
+                return KpmCli(p, "ksud").also { cachedKpmCli = it }
+            }
+        }
+
+        // 3) PATH command candidates.
+        val cmdCandidates = listOf(
+            KpmCli("kpatch-android", "kpatch"),
+            KpmCli("kpatch", "kpatch"),
+            KpmCli("ksud", "ksud")
+        )
+        for (candidate in cmdCandidates) {
+            val (_, out) = shellExec("command -v ${candidate.bin} 2>/dev/null")
+            val found = out.trim()
+            if (found.isNotEmpty()) {
+                return candidate.copy(bin = found).also { cachedKpmCli = it }
+            }
+        }
+
+        return null
+    }
+
+    private fun buildCtlCmd(cli: KpmCli, command: String): String {
+        return when (cli.style) {
+            "ksud" -> "${cli.bin} kpm control $MODULE '$command'"
+            else -> "${cli.bin} $superKey kpm ctl0 $MODULE '$command'"
+        }
+    }
+
+    private fun parseNrCsv(csv: String): List<Int> {
+        return csv.split(",").mapNotNull { it.trim().toIntOrNull() }
+    }
+
+    private fun onKsudCommandAccepted(command: String) {
+        when {
+            command == "enable" -> ksudEnabled = true
+            command == "disable" -> ksudEnabled = false
+            command.startsWith("uid ") -> {
+                ksudTargetUid = command.substringAfter("uid ").trim().toIntOrNull() ?: ksudTargetUid
+            }
+            command.startsWith("set_nrs ") -> {
+                ksudLoggingNrs.clear()
+                ksudLoggingNrs.addAll(parseNrCsv(command.substringAfter("set_nrs ")))
+            }
+            command.startsWith("enable_nr ") -> {
+                command.substringAfter("enable_nr ").trim().toIntOrNull()?.let { ksudLoggingNrs.add(it) }
+            }
+            command.startsWith("disable_nr ") -> {
+                command.substringAfter("disable_nr ").trim().toIntOrNull()?.let { ksudLoggingNrs.remove(it) }
+            }
+            command == "disable_all" -> ksudLoggingNrs.clear()
+            // enable_all cannot infer exact list without richer ksud output.
+        }
+    }
+
+    private fun buildKsudStatusJson(): String {
+        val j = JSONObject()
+        j.put("ok", true)
+        j.put("version", "ksud-bridge")
+        j.put("enabled", ksudEnabled)
+        j.put("target_uid", ksudTargetUid)
+        j.put("hooks_installed", 0)
+        j.put("nrs_logging", ksudLoggingNrs.size)
+        j.put("events_total", 0)
+        j.put("events_buffered", 0)
+        j.put("tier2", false)
+        val arr = JSONArray()
+        ksudLoggingNrs.forEach { arr.put(it) }
+        j.put("logging_nrs", arr)
+        j.put("hooks", JSONArray())
+        return j.toString()
     }
 
     private object PersistentSuShell {
@@ -171,18 +274,38 @@ object KpmBridge {
     private suspend fun execute(command: String): KpmResult = mutex.withLock {
         withContext(Dispatchers.IO) {
             try {
-                val shellCmd = "$KPATCH $superKey kpm ctl0 $MODULE '$command'"
+                val cli = resolveKpmCli()
+                if (cli == null) {
+                    return@withContext KpmResult(
+                        false,
+                        "",
+                        "kpm userspace CLI not found (kpatch/ksud). Please confirm APatch/KernelSU userspace tool is installed."
+                    )
+                }
+
+                val shellCmd = buildCtlCmd(cli, command)
                 val (exitCode, directOutput) = shellExec(shellCmd)
                 val output = directOutput
 
                 if (output.isNotEmpty()) {
+                    if (cli.style == "ksud" && output.trim() == "0") {
+                        onKsudCommandAccepted(command)
+                        val synthetic = if (command == "status") buildKsudStatusJson() else """{"ok":true}"""
+                        Log.d(TAG, "execute($command) KSUD rc=0 -> synthetic JSON")
+                        return@withContext KpmResult(true, synthetic)
+                    }
                     val simple = StatusParser.parseSimple(output)
                     if (simple.ok) {
                         Log.d(TAG, "execute($command) OK: ${output.take(200)}")
                         KpmResult(true, output)
                     } else {
+                        val err = when {
+                            output.contains("not found", ignoreCase = true) -> output
+                            output.contains("permission denied", ignoreCase = true) -> output
+                            else -> simple.error
+                        }
                         Log.w(TAG, "execute($command) FAIL: ${simple.error}")
-                        KpmResult(false, output, simple.error)
+                        KpmResult(false, output, err)
                     }
                 } else {
                     val errMsg = "exit=$exitCode, no output"
@@ -249,7 +372,15 @@ object KpmBridge {
     suspend fun drain(max: Int = 1024): KpmResult = mutex.withLock {
         withContext(Dispatchers.IO) {
             try {
-                val shellCmd = "$KPATCH $superKey kpm ctl0 $MODULE 'drain $max'"
+                val cli = resolveKpmCli()
+                if (cli == null) {
+                    return@withContext KpmResult(
+                        false,
+                        "",
+                        "kpm userspace CLI not found (kpatch/ksud). Please confirm APatch/KernelSU userspace tool is installed."
+                    )
+                }
+                val shellCmd = buildCtlCmd(cli, "drain $max")
                 val (exitCode, directOutput) = shellExec(shellCmd)
 
                 delay(80)
