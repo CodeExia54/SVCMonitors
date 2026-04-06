@@ -28,6 +28,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
       - name: Set up Gradle (AGP 8.1 compatible)
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -57,8 +62,14 @@ jobs:
           name: svc-monitor-kpm
           path: kpm/svc_monitor.kpm
 
-      - name: Upload APK artifact
+      - name: Upload SVC APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: svc-monitor-apk-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload MX APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mx-app-apk-debug
+          path: MX_APP/app/build/outputs/apk/debug/app-debug.apk

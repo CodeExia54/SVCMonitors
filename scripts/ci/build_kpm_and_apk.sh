@@ -58,7 +58,7 @@ if [[ -z "$TOOLCHAIN_BIN" ]]; then
   exit 1
 fi
 
-echo "[1/2] Building KPM with toolchain: $TOOLCHAIN_BIN"
+echo "[1/3] Building KPM with toolchain: $TOOLCHAIN_BIN"
 make -C "$ROOT_DIR/kpm" clean all \
   KP_DIR="$KP_DIR" \
   SDK_DIR="$ANDROID_SDK_ROOT" \
@@ -71,7 +71,7 @@ if [[ ! -f "$KPM_OUT" ]]; then
   exit 1
 fi
 
-echo "[2/2] Building Android APK"
+echo "[2/3] Building SVC Android APK"
 (
   cd "$ROOT_DIR/android"
   echo "[INFO] Gradle binary: $GRADLE_BIN"
@@ -84,6 +84,20 @@ if [[ ! -f "$APK_OUT" ]]; then
   exit 1
 fi
 
+echo "[3/3] Building MX APK"
+(
+  cd "$ROOT_DIR/MX_APP"
+  echo "[INFO] Gradle binary: $GRADLE_BIN"
+  "$GRADLE_BIN" -p . :app:assembleDebug --no-daemon -Dkotlin.daemon.enabled=false
+)
+
+MX_APK_OUT="$ROOT_DIR/MX_APP/app/build/outputs/apk/debug/app-debug.apk"
+if [[ ! -f "$MX_APK_OUT" ]]; then
+  echo "[ERROR] Missing MX APK artifact: $MX_APK_OUT" >&2
+  exit 1
+fi
+
 echo "[OK] Built artifacts:"
 echo "- $KPM_OUT"
 echo "- $APK_OUT"
+echo "- $MX_APK_OUT"
