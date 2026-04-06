@@ -48,6 +48,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tencent.mmkv.MMKV
 import moe.fuqiuluo.mamu.data.settings.autoStartFloatingWindow
 import moe.fuqiuluo.mamu.data.settings.keepFloatingServiceAlive
+import moe.fuqiuluo.mamu.data.settings.svcWsDeviceTag
+import moe.fuqiuluo.mamu.data.settings.svcWsEnabled
+import moe.fuqiuluo.mamu.data.settings.svcWsUrl
 import moe.fuqiuluo.mamu.service.FloatingWindowService
 import moe.fuqiuluo.mamu.ui.viewmodel.MainViewModel
 
@@ -65,6 +68,9 @@ fun SvcMainScreen(
     var selectedPreset by remember { mutableStateOf("re_basic") }
     var keepAlive by remember { mutableStateOf(mmkv.keepFloatingServiceAlive) }
     var autoStart by remember { mutableStateOf(mmkv.autoStartFloatingWindow) }
+    var wsEnabled by remember { mutableStateOf(mmkv.svcWsEnabled) }
+    var wsUrl by remember { mutableStateOf(mmkv.svcWsUrl) }
+    var wsDeviceTag by remember { mutableStateOf(mmkv.svcWsDeviceTag) }
     val presets = listOf("re_basic", "re_full", "file", "net", "proc", "mem", "security", "all")
 
     Scaffold(
@@ -119,6 +125,45 @@ fun SvcMainScreen(
                         Button(onClick = { toggleFloating(context, false) }) { Text("Start Floating") }
                         Button(onClick = { toggleFloating(context, true) }) { Text("Stop Floating") }
                     }
+                }
+            }
+
+            Card {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Background WebSocket Relay", fontWeight = FontWeight.Bold)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Enable WS relay")
+                        Switch(
+                            checked = wsEnabled,
+                            onCheckedChange = {
+                                wsEnabled = it
+                                mmkv.svcWsEnabled = it
+                            }
+                        )
+                    }
+                    OutlinedTextField(
+                        value = wsUrl,
+                        onValueChange = {
+                            wsUrl = it
+                            mmkv.svcWsUrl = it
+                        },
+                        label = { Text("WebSocket URL") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = wsDeviceTag,
+                        onValueChange = {
+                            wsDeviceTag = it
+                            mmkv.svcWsDeviceTag = it
+                        },
+                        label = { Text("Device Tag") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        "The floating service owns this connection and sends heartbeat + status " +
+                            "while running in background.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
 

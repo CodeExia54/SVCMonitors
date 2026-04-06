@@ -28,6 +28,9 @@ import androidx.appcompat.view.ContextThemeWrapper
 import androidx.core.app.NotificationCompat
 import com.tencent.mmkv.MMKV
 import moe.fuqiuluo.mamu.data.settings.keepFloatingServiceAlive
+import moe.fuqiuluo.mamu.data.settings.svcWsDeviceTag
+import moe.fuqiuluo.mamu.data.settings.svcWsEnabled
+import moe.fuqiuluo.mamu.data.settings.svcWsUrl
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -100,6 +103,7 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
     private val notification by lazy {
         NotificationOverlay(this)
     }
+    private val webSocketRelay = SvcWebSocketRelay()
 
     // Feature controllers
     private lateinit var searchController: SearchController
@@ -181,6 +185,12 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         subscribeToUIActionEvents()
         subscribeToMemoryRangeChangedEvents()
         subscribeToProcessStateEvents()
+
+        val mmkv = MMKV.defaultMMKV()
+        if (mmkv.svcWsEnabled) {
+            webSocketRelay.start(mmkv.svcWsUrl, mmkv.svcWsDeviceTag)
+        }
+        webSocketRelay.updateStatus(isFloatingActive = true, keepAlive = mmkv.keepFloatingServiceAlive)
 
         // Notify listeners that the overlay has started
         FloatingWindowStateManager.setActive(true)
@@ -1115,6 +1125,8 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
 
         // Show all realtime monitors again
         RealtimeMonitorOverlay.showAll()
+        val mmkv = MMKV.defaultMMKV()
+        webSocketRelay.updateStatus(isFloatingActive = true, keepAlive = mmkv.keepFloatingServiceAlive)
     }
 
     private fun showFullscreen() {
@@ -1141,6 +1153,8 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         if (!WuwaDriver.isProcessBound) {
             showProcessSelectionDialog()
         }
+        val mmkv = MMKV.defaultMMKV()
+        webSocketRelay.updateStatus(isFloatingActive = true, keepAlive = mmkv.keepFloatingServiceAlive)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -1273,6 +1287,7 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         val mmkv = MMKV.defaultMMKV()
+        webSocketRelay.updateStatus(isFloatingActive = true, keepAlive = mmkv.keepFloatingServiceAlive)
         if (mmkv.keepFloatingServiceAlive) {
             val restartIntent = Intent(applicationContext, FloatingWindowService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1287,6 +1302,7 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         super.onDestroy()
 
         notification.destroy()
+        webSocketRelay.release()
         windowManager.removeView(floatingIconView)
         windowManager.removeView(fullscreenView)
 

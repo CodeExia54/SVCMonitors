@@ -155,6 +155,7 @@ dependencies {
     implementation(libs.material)
     implementation(libs.fastutil)
     implementation("org.jetbrains.kotlinx:kotlinx-io-jvm:0.1.16")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // libsu - Root Shell library by topjohnwu (Magisk author)
     val libsuVersion = "6.0.0"
