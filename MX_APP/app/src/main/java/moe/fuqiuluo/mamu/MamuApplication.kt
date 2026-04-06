@@ -1,5 +1,3 @@
-@file:Suppress("KotlinJniMissingFunction")
-
 package moe.fuqiuluo.mamu
 
 import android.app.Application
@@ -10,7 +8,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import java.io.File
-import kotlin.system.exitProcess
 
 private const val TAG = "MamuApplication"
 
@@ -18,10 +15,6 @@ class MamuApplication : Application() {
     companion object {
         lateinit var instance: MamuApplication
             private set
-
-        init {
-            System.loadLibrary("mamu_core")
-        }
     }
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -42,11 +35,6 @@ class MamuApplication : Application() {
             }
         }
 
-        if (!initMamuCore()) {
-            Log.e(TAG, "Failed to initialize Mamu Core")
-            exitProcess(1)
-        }
-
         Log.d(TAG, "SVC application bootstrap initialized")
     }
 
@@ -60,9 +48,4 @@ class MamuApplication : Application() {
         applicationScope.cancel()
     }
 
-    /**
-     * 初始化 Mamu Core 库
-     * @return 初始化是否成功
-     */
-    private external fun initMamuCore(): Boolean
 }
