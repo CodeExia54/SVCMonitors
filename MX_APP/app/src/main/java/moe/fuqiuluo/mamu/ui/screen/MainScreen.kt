@@ -74,7 +74,7 @@ fun MainScreen(
                     topBar = {
                         if (selectedTab == 0) {
                             TopAppBar(
-                                title = { Text("Mamu") },
+                                title = { Text("SVC Monitor") },
                                 actions = {
                                     IconButton(onClick = { viewModel.loadData() }) {
                                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
@@ -107,9 +107,7 @@ fun MainScreen(
                     Box(modifier = Modifier.padding(paddingValues)) {
                         TabContent(
                             selectedTab = selectedTab,
-                            windowSizeClass = windowSizeClass,
-                            viewModel = viewModel,
-                            onShowTutorial = { showTutorial = true }
+                            windowSizeClass = windowSizeClass
                         )
                     }
                 }
@@ -159,9 +157,7 @@ fun MainScreen(
                         ) {
                             TabContent(
                                 selectedTab = selectedTab,
-                                windowSizeClass = windowSizeClass,
-                                viewModel = viewModel,
-                                onShowTutorial = { showTutorial = true }
+                                windowSizeClass = windowSizeClass
                             )
                         }
                     }
@@ -174,9 +170,7 @@ fun MainScreen(
 @Composable
 private fun TabContent(
     selectedTab: Int,
-    windowSizeClass: WindowSizeClass,
-    viewModel: MainViewModel,
-    onShowTutorial: () -> Unit
+    windowSizeClass: WindowSizeClass
 ) {
     Crossfade(
         targetState = selectedTab,
