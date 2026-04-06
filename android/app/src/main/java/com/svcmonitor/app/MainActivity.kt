@@ -113,6 +113,7 @@ class MainActivity : AppCompatActivity() {
     private var wsRelayEnabled = false
     private var wsRelayUrl = "ws://127.0.0.1:8080/ws"
     private var wsRelayDevice = "svc-device"
+    private var svcFloatingEnabled = false
 
     private data class SensitiveRule(val needle: String, val color: Int)
     private val sensitiveRules by lazy {
@@ -170,6 +171,7 @@ class MainActivity : AppCompatActivity() {
         wsRelayEnabled = prefs.getBoolean("svc_ws_enabled", false)
         wsRelayUrl = prefs.getString("svc_ws_url", "ws://127.0.0.1:8080/ws") ?: "ws://127.0.0.1:8080/ws"
         wsRelayDevice = prefs.getString("svc_ws_device", "svc-device") ?: "svc-device"
+        svcFloatingEnabled = prefs.getBoolean("svc_floating_enabled", false)
 
         // Pre-build ALL tab views FIRST (before observeViewModel!)
         val dashboardView = buildDashboardTab()
@@ -191,6 +193,7 @@ class MainActivity : AppCompatActivity() {
         if (relayEnabled) startRelay()
         if (pcServerEnabled) startPcServer()
         if (bgSvcEnabled) startBackgroundRelayService()
+        if (svcFloatingEnabled) startSvcFloatingService()
     }
 
     /* ══════════════════════════════════════════════════════════════
@@ -644,6 +647,41 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         stopBackgroundRelayService()
                         tvMsg.text = "Tip: Background relay service stopped"
+                    }
+                }
+            })
+
+            addView(makeDivider())
+            addView(Switch(this@MainActivity).apply {
+                text = "Enable SVC floating window overlay (MX-like)"
+                isChecked = svcFloatingEnabled
+                setOnCheckedChangeListener { _, checked ->
+                    svcFloatingEnabled = checked
+                    prefs.edit().putBoolean("svc_floating_enabled", checked).apply()
+                    if (checked) {
+                        startSvcFloatingService()
+                        tvMsg.text = "Tip: SVC floating overlay started"
+                    } else {
+                        stopSvcFloatingService()
+                        tvMsg.text = "Tip: SVC floating overlay stopped"
+                    }
+                }
+            })
+
+            addView(Button(this@MainActivity).apply {
+                text = "Request overlay permission"
+                isAllCaps = false
+                setOnClickListener {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
+                        !android.provider.Settings.canDrawOverlays(this@MainActivity)
+                    ) {
+                        val i = Intent(
+                            android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            android.net.Uri.parse("package:$packageName")
+                        )
+                        startActivity(i)
+                    } else {
+                        tvMsg.text = "Tip: Overlay permission already granted"
                     }
                 }
             })
@@ -2639,6 +2677,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun stopBackgroundRelayService() {
         stopService(Intent(this, BackgroundRelayService::class.java))
+    }
+
+    private fun startSvcFloatingService() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
+            !android.provider.Settings.canDrawOverlays(this)
+        ) {
+            tvMsg.text = "Tip: Please grant overlay permission first"
+            return
+        }
+        val i = Intent(this, SvcFloatingWindowService::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            startForegroundService(i)
+        } else {
+            startService(i)
+        }
+    }
+
+    private fun stopSvcFloatingService() {
+        stopService(Intent(this, SvcFloatingWindowService::class.java))
     }
 
     override fun onDestroy() {
