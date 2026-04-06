@@ -152,16 +152,50 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         fullscreenBinding =
             FloatingFullscreenLayoutBinding.inflate(LayoutInflater.from(themedContext))
 
-        setupFloatingIcon()
-        setupFullscreenView()
-
         svcOnlyMode = true
-        Toast.makeText(this, "SVC-only mode enabled", Toast.LENGTH_SHORT).show()
-        Log.i(TAG, "SVC-only runtime mode: legacy memory modules are intentionally disabled")
-        startSvcRuntime()
+        if (svcOnlyMode) {
+            setupSvcOnlyFloatingIcon()
+            Toast.makeText(this, "SVC-only floating enabled", Toast.LENGTH_SHORT).show()
+            Log.i(TAG, "SVC-only runtime mode: using lightweight floating icon")
+            startSvcRuntime()
+        } else {
+            setupFloatingIcon()
+            setupFullscreenView()
+            initializeControllers()
+            subscribeToUIActionEvents()
+            subscribeToMemoryRangeChangedEvents()
+            subscribeToProcessStateEvents()
+            startSvcRuntime()
+        }
 
         // Notify listeners that the overlay has started
         FloatingWindowStateManager.setActive(true)
+    }
+
+    private fun setupSvcOnlyFloatingIcon() {
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
+            },
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        )
+        params.gravity = Gravity.TOP or Gravity.START
+        params.x = 32
+        params.y = 180
+
+        windowManager.addView(floatingIconView, params)
+        floatingIconBinding.appIcon.setOnClickListener {
+            val launch = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(launch)
+            Toast.makeText(this, "Open SVC Monitor", Toast.LENGTH_SHORT).show()
+        }
     }
 
     /**
@@ -1251,8 +1285,8 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         super.onDestroy()
 
         notification.destroy()
-        windowManager.removeView(floatingIconView)
-        windowManager.removeView(fullscreenView)
+        runCatching { windowManager.removeView(floatingIconView) }
+        runCatching { windowManager.removeView(fullscreenView) }
 
         if (WuwaDriver.isProcessBound) {
             WuwaDriver.unbindProcess()
