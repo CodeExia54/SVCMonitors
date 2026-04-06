@@ -470,6 +470,14 @@ object KpmBridge {
         }
     }
 
+    suspend fun isProcessAlive(pid: Int): Boolean = mutex.withLock {
+        withContext(Dispatchers.IO) {
+            if (pid <= 0) return@withContext false
+            val (code, out) = shellExec("if [ -d /proc/$pid ]; then echo 1; else echo 0; fi")
+            code == 0 && out.trim() == "1"
+        }
+    }
+
     suspend fun readProcFdLink(pid: Int, fd: Long): String = mutex.withLock {
         withContext(Dispatchers.IO) {
             val (_, out) = shellExec("readlink /proc/$pid/fd/$fd 2>/dev/null")

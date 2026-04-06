@@ -16,7 +16,7 @@ class LogExporter(private val ctx: Context) {
 
     fun exportCsv(events: List<StatusParser.SvcEvent>): File {
         val ts = dateFormat.format(Date())
-        val dir = File("/sdcard/SVCMonitor")
+        val dir = File(ctx.cacheDir, "exports")
         if (!dir.exists()) {
             dir.mkdirs()
         }
@@ -40,7 +40,7 @@ class LogExporter(private val ctx: Context) {
 
     fun exportJson(events: List<StatusParser.SvcEvent>): File {
         val ts = dateFormat.format(Date())
-        val dir = File("/sdcard/SVCMonitor")
+        val dir = File(ctx.cacheDir, "exports")
         if (!dir.exists()) {
             dir.mkdirs()
         }

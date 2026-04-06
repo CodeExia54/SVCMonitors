@@ -19,6 +19,7 @@ import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
@@ -28,6 +29,7 @@ import com.svcmonitor.app.db.ThreadEdge
 import com.svcmonitor.app.db.ThreadStat
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -109,6 +111,7 @@ class MainActivity : AppCompatActivity() {
     private var pcServerSocket: java.net.ServerSocket? = null
     private val pcServerClients = ArrayList<java.io.BufferedWriter>(4)
     private var pcServerBacklogLimit = 20000
+    private var mapsSamplerJob: kotlinx.coroutines.Job? = null
 
     private data class SensitiveRule(val needle: String, val color: Int)
     private val sensitiveRules by lazy {
@@ -182,6 +185,7 @@ class MainActivity : AppCompatActivity() {
 
         if (relayEnabled) startRelay()
         if (pcServerEnabled) startPcServer()
+        startMapsSampler()
     }
 
     /* ══════════════════════════════════════════════════════════════
@@ -1209,11 +1213,13 @@ class MainActivity : AppCompatActivity() {
                 tvMonState.setTextColor(cGreen)
                 btnStartStop.text = "Stop monitoring"
                 btnStartStop.setBackgroundColor(cRed)
+                startKeepAliveService()
             } else {
                 tvMonState.text = "Status: Not started"
                 tvMonState.setTextColor(cSecondary)
                 btnStartStop.text = "One-tap start monitoring"
                 btnStartStop.setBackgroundColor(cGreen)
+                stopKeepAliveService()
             }
         }
 
@@ -1882,7 +1888,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 for (e in batch) {
-                    val callerResolved = formatAddrSoOffset(e.tgid, e.caller)
+                    val callerResolved = formatAddrSoOffset(e.tgid, e.caller, e.seq)
                     val chain = buildFpCallChain(e, callerResolved)
                     if (chain.isNotBlank()) {
                         eventCallChain[e.seq] = chain
@@ -1912,9 +1918,9 @@ class MainActivity : AppCompatActivity() {
                 val pending = snapshot.filter { !eventSearchExtra.containsKey(it.seq) }
                 for (chunk in pending.chunked(200)) {
                     for (e in chunk) {
-                        val pcResolved = formatAddrSoOffset(e.tgid, e.pc)
-                        val callerResolved = formatAddrSoOffset(e.tgid, e.caller)
-                        val cloneResolved = if (e.cloneFn != 0L) formatAddrSoOffset(e.tgid, e.cloneFn) else ""
+                        val pcResolved = formatAddrSoOffset(e.tgid, e.pc, e.seq)
+                        val callerResolved = formatAddrSoOffset(e.tgid, e.caller, e.seq)
+                        val cloneResolved = if (e.cloneFn != 0L) formatAddrSoOffset(e.tgid, e.cloneFn, e.seq) else ""
                         val fdResolved = if (nrUsesFd(e.nr)) {
                             val r = KpmBridge.readProcFdLink(e.tgid, e.a0)
                             if (r.isNotBlank()) r else ""
@@ -1933,7 +1939,7 @@ class MainActivity : AppCompatActivity() {
                                 var idx = 0
                                 for (a in e.bt) {
                                     if (a == 0L) continue
-                                    appendLine("#$idx ${formatAddrSoOffset(e.tgid, a)}")
+                                    appendLine("#$idx ${formatAddrSoOffset(e.tgid, a, e.seq)}")
                                     idx++
                                     if (idx >= 16) break
                                 }
@@ -1983,7 +1989,7 @@ class MainActivity : AppCompatActivity() {
                                 appendLine()
                                 addrs.forEach { a ->
                                     val abs = "0x${java.lang.Long.toHexString(a)}"
-                                    val so = resolveAddress(e.tgid, a)
+                                    val so = resolveAddress(e.tgid, a, e.seq)
                                     appendLine(if (so.isNotEmpty()) "$abs -> $so" else "$abs -> unmapped")
                                 }
                             }
@@ -2022,7 +2028,7 @@ class MainActivity : AppCompatActivity() {
             if (nextFp <= fp) break
             if (nextFp - fp > 0x40000L) break
 
-            val lrResolved = formatAddrSoOffset(evt.tgid, lr)
+            val lrResolved = formatAddrSoOffset(evt.tgid, lr, evt.seq)
             if (lrResolved.contains("(unmapped)")) break
             if (lrResolved.startsWith("[anon:")) break
             lines.add("#${depth + 1} $lrResolved")
@@ -2101,9 +2107,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun showEventDetail(evt: StatusParser.SvcEvent) {
         vm.viewModelScope_launch {
-            val pcResolved = formatAddrSoOffset(evt.tgid, evt.pc)
-            val callerResolved = formatAddrSoOffset(evt.tgid, evt.caller)
-            val cloneResolved = if (evt.cloneFn != 0L) formatAddrSoOffset(evt.tgid, evt.cloneFn) else ""
+            val pcResolved = formatAddrSoOffset(evt.tgid, evt.pc, evt.seq)
+            val callerResolved = formatAddrSoOffset(evt.tgid, evt.caller, evt.seq)
+            val cloneResolved = if (evt.cloneFn != 0L) formatAddrSoOffset(evt.tgid, evt.cloneFn, evt.seq) else ""
             val chainResolved = eventCallChain[evt.seq].orEmpty().ifBlank {
                 val r = buildFpCallChain(evt, callerResolved)
                 if (r.isNotBlank()) eventCallChain[evt.seq] = r
@@ -2114,7 +2120,7 @@ class MainActivity : AppCompatActivity() {
                     var idx = 0
                     for (a in evt.bt) {
                         if (a == 0L) continue
-                        val resolved = formatAddrSoOffset(evt.tgid, a)
+                        val resolved = formatAddrSoOffset(evt.tgid, a, evt.seq)
                         appendLine("#$idx $resolved")
                         idx++
                         if (idx >= 16) break
@@ -2177,7 +2183,7 @@ class MainActivity : AppCompatActivity() {
                     appendLine("═══ desc Address Resolution ═══")
                     addrs.forEach { a ->
                         val abs = "0x${java.lang.Long.toHexString(a)}"
-                        val so = resolveAddress(evt.tgid, a)
+                        val so = resolveAddress(evt.tgid, a, evt.seq)
                         appendLine(if (so.isNotEmpty()) "$abs -> $so" else "$abs -> unmapped")
                     }
                 }
@@ -2487,13 +2493,23 @@ class MainActivity : AppCompatActivity() {
         val mapOffset: Long,
         val path: String
     )
-    private data class MapsSnapshot(val tsMs: Long, val regions: List<MapRegion>)
+    private data class MapsSnapshot(
+        val tsMs: Long,
+        val sampleSeq: Long,
+        val regions: List<MapRegion>,
+        val mapLineCount: Int
+    )
     private val mapsCache = HashMap<Int, MapsSnapshot>()
+    private val mapsHistory = HashMap<Int, ArrayDeque<MapsSnapshot>>()
+    private val mapsLock = Any()
     private val mapsCacheTtlMs = 5000L
+    private val mapsHistoryLimit = 5
+    private val mapsSampleIntervalMs = 60_000L
+    private val trackedPidLastSeenMs = HashMap<Int, Long>()
 
-    private suspend fun resolveAddress(pid: Int, addr: Long): String {
+    private suspend fun resolveAddress(pid: Int, addr: Long, seqHint: Long? = null): String {
         if (pid <= 0 || addr == 0L) return ""
-        val regions = getMapsRegions(pid) ?: return ""
+        val regions = getMapsRegions(pid, seqHint) ?: return ""
         val region = findMapRegion(regions, addr) ?: return ""
         val fileOffset = (addr - region.start) + region.mapOffset
         if (region.path.isBlank() || region.path.startsWith("[")) {
@@ -2507,15 +2523,18 @@ class MainActivity : AppCompatActivity() {
         return "$name+0x${java.lang.Long.toHexString(fileOffset)}"
     }
 
-    private suspend fun formatAddrSoOffset(pid: Int, addr: Long): String {
+    private suspend fun formatAddrSoOffset(pid: Int, addr: Long, seqHint: Long? = null): String {
         val abs = "0x${java.lang.Long.toHexString(addr)}"
-        val so = resolveAddress(pid, addr)
+        val so = resolveAddress(pid, addr, seqHint)
         return if (so.isNotEmpty()) "$so ($abs)" else "$abs (unmapped)"
     }
 
-    private suspend fun getMapsRegions(pid: Int): List<MapRegion>? {
+    private suspend fun getMapsRegions(pid: Int, seqHint: Long? = null): List<MapRegion>? {
+        val fromHistory = pickHistorySnapshot(pid, seqHint)
+        if (fromHistory != null) return fromHistory.regions
+
         val now = System.currentTimeMillis()
-        val cached = mapsCache[pid]
+        val cached = synchronized(mapsLock) { mapsCache[pid] }
         if (cached != null && now - cached.tsMs <= mapsCacheTtlMs) {
             return cached.regions
         }
@@ -2523,8 +2542,111 @@ class MainActivity : AppCompatActivity() {
         val maps = KpmBridge.readProcMaps(pid)
         if (maps.isBlank()) return null
         val regions = parseMapsRegions(maps)
-        mapsCache[pid] = MapsSnapshot(now, regions)
+        val snap = MapsSnapshot(
+            tsMs = now,
+            sampleSeq = lastEventsAll.maxOfOrNull { it.seq } ?: 0L,
+            regions = regions,
+            mapLineCount = maps.lineSequence().count { it.isNotBlank() }
+        )
+        appendMapsHistory(pid, snap)
         return regions
+    }
+
+    private fun appendMapsHistory(pid: Int, snapshot: MapsSnapshot) {
+        synchronized(mapsLock) {
+            val q = mapsHistory.getOrPut(pid) { ArrayDeque(mapsHistoryLimit + 1) }
+            val prev = q.lastOrNull()
+            if (prev != null &&
+                prev.mapLineCount == snapshot.mapLineCount &&
+                prev.regions.size == snapshot.regions.size &&
+                prev.sampleSeq == snapshot.sampleSeq
+            ) {
+                mapsCache[pid] = prev
+                return
+            }
+            q.addLast(snapshot)
+            while (q.size > mapsHistoryLimit) q.removeFirst()
+            mapsCache[pid] = snapshot
+        }
+    }
+
+    private fun pickHistorySnapshot(pid: Int, seqHint: Long?): MapsSnapshot? {
+        synchronized(mapsLock) {
+            val q = mapsHistory[pid] ?: return null
+            if (q.isEmpty()) return null
+            if (seqHint == null) return q.lastOrNull()
+            var best: MapsSnapshot? = null
+            for (s in q) {
+                if (s.sampleSeq <= seqHint) best = s
+            }
+            return best ?: q.lastOrNull()
+        }
+    }
+
+    private fun startMapsSampler() {
+        if (mapsSamplerJob != null) return
+        mapsSamplerJob = lifecycleScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                try {
+                    val now = System.currentTimeMillis()
+                    val eventsSnapshot = lastEventsAll.toList()
+                    val latestSeq = eventsSnapshot.maxOfOrNull { it.seq } ?: 0L
+                    val activePids = LinkedHashSet<Int>()
+                    for (e in eventsSnapshot) {
+                        val pid = e.tgid
+                        if (pid > 0) {
+                            activePids.add(pid)
+                            trackedPidLastSeenMs[pid] = now
+                        }
+                    }
+
+                    // Keep recently seen processes for up to 5 minutes
+                    val staleThreshold = now - 5 * mapsSampleIntervalMs
+                    val tracked = trackedPidLastSeenMs.entries
+                        .filter { it.value >= staleThreshold }
+                        .map { it.key }
+                    activePids.addAll(tracked)
+
+                    // Drop long-dead tracked pids
+                    trackedPidLastSeenMs.entries.removeAll { it.value < staleThreshold }
+
+                    for (pid in activePids) {
+                        val alive = try { KpmBridge.isProcessAlive(pid) } catch (_: Exception) { false }
+                        if (!alive) {
+                            trackedPidLastSeenMs.remove(pid)
+                            continue
+                        }
+                        val maps = try { KpmBridge.readProcMaps(pid) } catch (_: Exception) { "" }
+                        if (maps.isBlank()) continue
+                        val regions = parseMapsRegions(maps)
+                        if (regions.isEmpty()) continue
+                        val snap = MapsSnapshot(
+                            tsMs = now,
+                            sampleSeq = latestSeq,
+                            regions = regions,
+                            mapLineCount = maps.lineSequence().count { it.isNotBlank() }
+                        )
+                        appendMapsHistory(pid, snap)
+                    }
+                } catch (_: Exception) {
+                }
+                kotlinx.coroutines.delay(mapsSampleIntervalMs)
+            }
+        }
+    }
+
+    private fun startKeepAliveService() {
+        val it = Intent(this, KeepAliveService::class.java).apply {
+            action = KeepAliveService.ACTION_START
+        }
+        ContextCompat.startForegroundService(this, it)
+    }
+
+    private fun stopKeepAliveService() {
+        val it = Intent(this, KeepAliveService::class.java).apply {
+            action = KeepAliveService.ACTION_STOP
+        }
+        startService(it)
     }
 
     private fun parseMapsRegions(maps: String): List<MapRegion> {
@@ -2574,6 +2696,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        vm.stopPolling()
+        mapsSamplerJob?.cancel()
+        mapsSamplerJob = null
     }
 }
