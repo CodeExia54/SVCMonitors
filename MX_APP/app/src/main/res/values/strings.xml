@@ -213,6 +213,9 @@
     <string name="notification_channel_description">Keep floating window service running in background</string>
     <string name="notification_title">Mamu Floating Window Active</string>
     <string name="notification_text">Tap to return to app</string>
+    <string name="notification_action_show">Show</string>
+    <string name="notification_action_hide">Hide</string>
+    <string name="notification_action_stop">Stop</string>
     <string name="home_title">Mamu</string>
     <string name="home_refresh">Refresh</string>
     <string name="home_driver_status_title">Driver Status</string>

@@ -25,9 +25,13 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.tencent.mmkv.MMKV
+import moe.fuqiuluo.mamu.data.settings.autoStartFloatingWindow
+import moe.fuqiuluo.mamu.data.settings.keepFloatingServiceAlive
 import moe.fuqiuluo.mamu.data.model.DriverStatus
 import moe.fuqiuluo.mamu.data.model.SeLinuxMode
 import moe.fuqiuluo.mamu.data.model.SystemInfo
+import moe.fuqiuluo.mamu.MainActivity
 import moe.fuqiuluo.mamu.service.FloatingWindowService
 import moe.fuqiuluo.mamu.ui.tutorial.components.TutorialDialog
 import moe.fuqiuluo.mamu.ui.theme.MXTheme
@@ -114,6 +118,10 @@ fun HomeScreen(
                             )
 
                             ReadmeCard(adaptiveLayout = adaptiveLayout)
+                            FloatingStabilityCard(
+                                adaptiveLayout = adaptiveLayout,
+                                isFloatingWindowActive = uiState.isFloatingWindowActive
+                            )
 
                             SystemInfoCard(
                                 adaptiveLayout = adaptiveLayout,
@@ -195,6 +203,13 @@ fun HomeScreen(
 
                             Box(modifier = Modifier.weight(1f)) {
                                 ReadmeCard(adaptiveLayout = adaptiveLayout)
+                            }
+
+                            Box(modifier = Modifier.weight(1f)) {
+                                FloatingStabilityCard(
+                                    adaptiveLayout = adaptiveLayout,
+                                    isFloatingWindowActive = uiState.isFloatingWindowActive
+                                )
                             }
 
                             Box(modifier = Modifier.weight(1f)) {
@@ -285,6 +300,82 @@ private fun toggleFloatingWindow(context: Context, isActive: Boolean) {
             context.startForegroundService(intent)
         } else {
             context.startService(intent)
+        }
+    }
+}
+
+@Composable
+private fun FloatingStabilityCard(
+    adaptiveLayout: AdaptiveLayoutInfo,
+    isFloatingWindowActive: Boolean
+) {
+    val context = LocalContext.current
+    val mmkv = remember { MMKV.defaultMMKV() }
+    var autoStart by remember { mutableStateOf(mmkv.autoStartFloatingWindow) }
+    var keepAlive by remember { mutableStateOf(mmkv.keepFloatingServiceAlive) }
+
+    StatusCard(
+        adaptiveLayout = adaptiveLayout,
+        title = "Floating Stability Center",
+        icon = Icons.Default.Shield
+    ) {
+        Text(
+            text = "Use floating UI for quick actions and keep advanced workflows in the main screen.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(Dimens.spacingSm(adaptiveLayout)))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Auto-start overlay", style = MaterialTheme.typography.bodyMedium)
+            Switch(
+                checked = autoStart,
+                onCheckedChange = {
+                    autoStart = it
+                    mmkv.autoStartFloatingWindow = it
+                }
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Keep service alive", style = MaterialTheme.typography.bodyMedium)
+            Switch(
+                checked = keepAlive,
+                onCheckedChange = {
+                    keepAlive = it
+                    mmkv.keepFloatingServiceAlive = it
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(Dimens.spacingSm(adaptiveLayout)))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Dimens.spacingSm(adaptiveLayout))
+        ) {
+            FilledTonalButton(
+                onClick = { toggleFloatingWindow(context, isFloatingWindowActive) },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(if (isFloatingWindowActive) "Stop Overlay" else "Start Overlay")
+            }
+            OutlinedButton(
+                onClick = {
+                    val intent = Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    }
+                    context.startActivity(intent)
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Open Main UI")
+            }
         }
     }
 }

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Window
 import androidx.compose.material3.*
@@ -26,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tencent.mmkv.MMKV
 import moe.fuqiuluo.mamu.data.settings.autoStartFloatingWindow
+import moe.fuqiuluo.mamu.data.settings.keepFloatingServiceAlive
 import moe.fuqiuluo.mamu.ui.theme.AdaptiveLayoutInfo
 import moe.fuqiuluo.mamu.ui.theme.AppTheme
 import moe.fuqiuluo.mamu.ui.theme.DarkMode
@@ -53,6 +55,7 @@ fun SettingsScreen(
 
     val mmkv = remember { MMKV.defaultMMKV() }
     var autoStartFloating by remember { mutableStateOf(mmkv.autoStartFloatingWindow) }
+    var keepFloatingAlive by remember { mutableStateOf(mmkv.keepFloatingServiceAlive) }
 
     if (showThemeDialog) {
         ThemeSelectionDialog(
@@ -154,6 +157,17 @@ fun SettingsScreen(
                         onCheckedChange = { enabled ->
                             autoStartFloating = enabled
                             mmkv.autoStartFloatingWindow = enabled
+                        }
+                    )
+                    SettingsSwitchItem(
+                        adaptiveLayout = adaptiveLayout,
+                        icon = Icons.Default.Refresh,
+                        title = "Keep Overlay Alive",
+                        description = "Auto-restart floating service when recent-task is removed",
+                        checked = keepFloatingAlive,
+                        onCheckedChange = { enabled ->
+                            keepFloatingAlive = enabled
+                            mmkv.keepFloatingServiceAlive = enabled
                         }
                     )
 

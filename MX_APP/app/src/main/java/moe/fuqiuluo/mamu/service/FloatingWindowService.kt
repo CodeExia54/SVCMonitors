@@ -27,6 +27,7 @@ import android.widget.Toast
 import androidx.appcompat.view.ContextThemeWrapper
 import androidx.core.app.NotificationCompat
 import com.tencent.mmkv.MMKV
+import moe.fuqiuluo.mamu.data.settings.keepFloatingServiceAlive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -75,6 +76,9 @@ import moe.fuqiuluo.mamu.widget.RealtimeMonitorOverlay
 private const val TAG = "FloatingWindowService"
 private const val NOTIFICATION_ID = 1001
 private const val CHANNEL_ID = "floating_window_service"
+private const val ACTION_SHOW = "moe.fuqiuluo.mamu.action.SHOW_FLOATING"
+private const val ACTION_HIDE = "moe.fuqiuluo.mamu.action.HIDE_FLOATING"
+private const val ACTION_STOP = "moe.fuqiuluo.mamu.action.STOP_FLOATING"
 
 class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
     // Coroutine scope
@@ -125,6 +129,24 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_SHOW -> {
+                if (::fullscreenBinding.isInitialized && ::floatingIconBinding.isInitialized) {
+                    showFullscreen()
+                }
+            }
+
+            ACTION_HIDE -> {
+                if (::fullscreenBinding.isInitialized && ::floatingIconBinding.isInitialized) {
+                    hideFullscreen()
+                }
+            }
+
+            ACTION_STOP -> {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
         return START_STICKY
     }
 
@@ -1217,13 +1239,48 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        val showIntent = PendingIntent.getService(
+            this,
+            1,
+            Intent(this, FloatingWindowService::class.java).setAction(ACTION_SHOW),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val hideIntent = PendingIntent.getService(
+            this,
+            2,
+            Intent(this, FloatingWindowService::class.java).setAction(ACTION_HIDE),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val stopIntent = PendingIntent.getService(
+            this,
+            3,
+            Intent(this, FloatingWindowService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title))
             .setContentText(getString(R.string.notification_text))
             .setSmallIcon(R.mipmap.ic_launcher).setContentIntent(pendingIntent).setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE).build()
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .addAction(0, getString(R.string.notification_action_show), showIntent)
+            .addAction(0, getString(R.string.notification_action_hide), hideIntent)
+            .addAction(0, getString(R.string.notification_action_stop), stopIntent)
+            .build()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        val mmkv = MMKV.defaultMMKV()
+        if (mmkv.keepFloatingServiceAlive) {
+            val restartIntent = Intent(applicationContext, FloatingWindowService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                applicationContext.startForegroundService(restartIntent)
+            } else {
+                applicationContext.startService(restartIntent)
+            }
+        }
     }
 
     override fun onDestroy() {

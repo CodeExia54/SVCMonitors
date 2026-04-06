@@ -16,7 +16,7 @@ import moe.fuqiuluo.mamu.data.local.RootFileSystem
 import moe.fuqiuluo.mamu.data.settings.autoStartFloatingWindow
 import moe.fuqiuluo.mamu.floating.FloatingWindowStateManager
 import moe.fuqiuluo.mamu.service.FloatingWindowService
-import moe.fuqiuluo.mamu.ui.screen.MainScreen
+import moe.fuqiuluo.mamu.ui.screen.SvcMainScreen
 import moe.fuqiuluo.mamu.ui.theme.MXTheme
 
 class MainActivity : ComponentActivity() {
@@ -32,7 +32,7 @@ class MainActivity : ComponentActivity() {
             MXTheme {
                 // 步骤3: 在Activity中计算WindowSizeClass并传递给Composable
                 val windowSizeClass = calculateWindowSizeClass(this)
-                MainScreen(windowSizeClass = windowSizeClass)
+                SvcMainScreen(windowSizeClass = windowSizeClass)
             }
         }
 
