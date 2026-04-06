@@ -2395,6 +2395,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun makeDivider(): View {
+        return View(this).apply {
+            setBackgroundColor(0x22000000)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(1)
+            ).apply {
+                topMargin = dp(10)
+                bottomMargin = dp(10)
+            }
+        }
+    }
+
     private fun refreshNrHighlights(nrs: List<Int>) {
         val set = nrs.toHashSet()
         for ((nr, tv) in nrNameViews) {
