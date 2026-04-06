@@ -14,9 +14,14 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.text.Editable
+import android.text.TextWatcher
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -39,6 +44,7 @@ class SvcFloatingWindowService : Service() {
     private var iconView: TextView? = null
     private var panelView: View? = null
     private var panelVisible = false
+    private var appList: List<AppInfo> = emptyList()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -121,7 +127,44 @@ class SvcFloatingWindowService : Service() {
         }
         root.addView(title)
 
+        val tvTarget = TextView(this).apply {
+            tag = "target_view"
+            textSize = 13f
+            setTextColor(0xFFFFCC80.toInt())
+            text = "Target UID: all (-1)"
+            setPadding(0, 8, 0, 6)
+        }
+        root.addView(tvTarget)
+
+        val etSearch = EditText(this).apply {
+            hint = "Search app/process"
+            setTextColor(0xFFFFFFFF.toInt())
+            setHintTextColor(0xFFB0BEC5.toInt())
+        }
+        root.addView(etSearch)
+
+        val spinner = Spinner(this).apply { tag = "proc_spinner" }
+        root.addView(spinner)
+
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val btnSelect = Button(this).apply {
+            text = "Select App"
+            setOnClickListener {
+                val item = spinner.selectedItem as? String ?: return@setOnClickListener
+                val uid = item.substringAfterLast("uid=", "-1").substringBefore(")").toIntOrNull() ?: -1
+                scope.launch(Dispatchers.IO) {
+                    val r = KpmBridge.setUid(uid)
+                    withContext(Dispatchers.Main) {
+                        if (r.success) {
+                            tvTarget.text = if (uid >= 0) "Target UID: $uid" else "Target UID: all (-1)"
+                            Toast.makeText(this@SvcFloatingWindowService, "Target updated", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(this@SvcFloatingWindowService, "Set UID failed: ${r.error}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        }
         val btnStart = Button(this).apply {
             text = "Start"
             setOnClickListener {
@@ -153,10 +196,13 @@ class SvcFloatingWindowService : Service() {
                 startActivity(i)
             }
         }
+        row.addView(btnSelect)
         row.addView(btnStart)
         row.addView(btnStop)
         row.addView(btnOpen)
         root.addView(row)
+
+        setupProcessSelector(etSearch, spinner)
 
         val tvLog = TextView(this).apply {
             tag = "log_view"
@@ -168,6 +214,34 @@ class SvcFloatingWindowService : Service() {
         val sv = ScrollView(this).apply { addView(tvLog) }
         root.addView(sv)
         return root
+    }
+
+    private fun setupProcessSelector(etSearch: EditText, spinner: Spinner) {
+        appList = AppResolver.getAllApps(this, hideSystemApps = false, onlyLaunchableApps = true)
+
+        fun refresh(q: String) {
+            val list = if (q.isBlank()) appList else appList.filter {
+                it.label.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true)
+            }
+            val labels = if (list.isEmpty()) {
+                listOf("All apps (uid=-1)")
+            } else {
+                listOf("All apps (uid=-1)") + list.map { "${it.label} (${it.packageName}, uid=${it.uid})" }
+            }
+            val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels).apply {
+                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            }
+            spinner.adapter = adapter
+        }
+
+        refresh("")
+        etSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                refresh(s?.toString().orEmpty().trim())
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
     }
 
     private fun togglePanel() {
