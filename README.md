@@ -12,7 +12,7 @@ ARM64 系统调用监控与逆向分析工具链：**KPM 内核模块 + Android 
 
 ## 快速开始
 
-- 编译/加载 KPM：见 [android/README.md](file:///Users/bytedance/Desktop/GithubProject/SVC_Call/android/README.md) 或 [kpm](file:///Users/bytedance/Desktop/GithubProject/SVC_Call/kpm)
+- 编译/加载 KPM：见 [android/README.md](./android/README.md) 或 [kpm](./kpm)
 - 安装 App：`adb install -r android/app/build/outputs/apk/debug/app-debug.apk`
 - 启动 PC Viewer：
 

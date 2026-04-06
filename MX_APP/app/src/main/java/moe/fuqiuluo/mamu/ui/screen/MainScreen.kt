@@ -8,9 +8,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -120,7 +120,7 @@ fun MainScreen(
                 Scaffold(
                     topBar = {
                         TopAppBar(
-                            title = { Text("Mamu") },
+                            title = { Text("SVC Monitor") },
                             actions = {
                                 IconButton(onClick = { viewModel.loadData() }) {
                                     Icon(Icons.Default.Refresh, contentDescription = "Refresh")
@@ -183,14 +183,9 @@ private fun TabContent(
         label = "tab_crossfade"
     ) { tab ->
         when (tab) {
-            0 -> HomeScreen(
-                windowSizeClass = windowSizeClass,
-                viewModel = viewModel,
-                onStartPractice = onShowTutorial
-            )
-
-            1 -> ModulesScreen(windowSizeClass = windowSizeClass)
-            2 -> ToolsScreen(windowSizeClass = windowSizeClass)
+            0 -> SvcMonitorScreen()
+            1 -> SvcFilterScreen()
+            2 -> SvcEventsScreen()
             3 -> LogsScreen(windowSizeClass = windowSizeClass)
         }
     }
@@ -202,8 +197,8 @@ data class BottomNavItem(
 )
 
 private val bottomNavItems = listOf(
-    BottomNavItem("Home", Icons.Default.Home),
-    BottomNavItem("Modules", Icons.Default.Extension),
-    BottomNavItem("Tools", Icons.Default.Build),
+    BottomNavItem("Monitor", Icons.Default.Dashboard),
+    BottomNavItem("Filter", Icons.Default.FilterList),
+    BottomNavItem("Events", Icons.Default.Tune),
     BottomNavItem("Logs", Icons.AutoMirrored.Filled.Article)
 )
