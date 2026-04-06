@@ -24,7 +24,7 @@ val unsignedReleaseBuild = providers.gradleProperty("unsignedRelease")
     .orElse(false)
 
 android {
-    namespace = "com.svcmonitor.app"
+    namespace = "moe.fuqiuluo.mamu"
     compileSdk = 36
     buildToolsVersion = "35.0.0"
 
@@ -92,6 +92,7 @@ android {
     buildFeatures {
         compose = true
         viewBinding = true
+        dataBinding = true
     }
     packaging {
         jniLibs {

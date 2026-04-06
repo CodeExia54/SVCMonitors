@@ -155,16 +155,9 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         setupFloatingIcon()
         setupFullscreenView()
 
-        svcOnlyMode = !WuwaDriver.loaded
-        if (svcOnlyMode) {
-            Toast.makeText(this, "SVC-only mode enabled", Toast.LENGTH_SHORT).show()
-            Log.w(TAG, "WuwaDriver not loaded; legacy memory modules are disabled")
-        } else {
-            initializeControllers()
-            subscribeToUIActionEvents()
-            subscribeToMemoryRangeChangedEvents()
-            subscribeToProcessStateEvents()
-        }
+        svcOnlyMode = true
+        Toast.makeText(this, "SVC-only mode enabled", Toast.LENGTH_SHORT).show()
+        Log.i(TAG, "SVC-only runtime mode: legacy memory modules are intentionally disabled")
         startSvcRuntime()
 
         // Notify listeners that the overlay has started
