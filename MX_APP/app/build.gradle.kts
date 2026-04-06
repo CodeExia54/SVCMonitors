@@ -34,6 +34,9 @@ android {
         targetSdk = 35
         versionCode = timestampVersionCode.get()
         versionName = "1.0.1" + ".r${gitCommitCount.get()}." + appVersionNameProvider.get()
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

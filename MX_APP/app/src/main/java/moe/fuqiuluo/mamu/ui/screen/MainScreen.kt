@@ -23,12 +23,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import moe.fuqiuluo.mamu.svc.repo.SvcRuntimeManager
 import moe.fuqiuluo.mamu.ui.theme.rememberAdaptiveLayoutInfo
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,6 +38,9 @@ import moe.fuqiuluo.mamu.ui.theme.rememberAdaptiveLayoutInfo
 fun MainScreen(windowSizeClass: WindowSizeClass) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val adaptiveLayout = rememberAdaptiveLayoutInfo(windowSizeClass)
+    LaunchedEffect(Unit) {
+        SvcRuntimeManager.start(pollMs = 1000L)
+    }
 
     when (adaptiveLayout.windowSizeClass.widthSizeClass) {
         WindowWidthSizeClass.Compact -> {

@@ -68,7 +68,7 @@ fi
 echo "[INFO] Building MX_APP debug APK"
 (
   cd "$MX_DIR"
-  "$GRADLE_BIN" clean :app:assembleDebug --no-daemon -Dkotlin.daemon.enabled=false
+  "$GRADLE_BIN" :app:assembleDebug --no-daemon -Dkotlin.daemon.enabled=false
 )
 
 APK_OUT="$MX_DIR/app/build/outputs/apk/debug/app-debug.apk"
