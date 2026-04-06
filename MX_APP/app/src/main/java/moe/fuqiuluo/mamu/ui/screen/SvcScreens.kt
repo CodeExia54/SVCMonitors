@@ -1,5 +1,7 @@
 package moe.fuqiuluo.mamu.ui.screen
 
+import android.content.Intent
+import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,6 +14,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -20,14 +24,23 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import moe.fuqiuluo.mamu.service.FloatingWindowService
 import moe.fuqiuluo.mamu.svc.repo.SvcRuntimeManager
 
 @Composable
 fun SvcMonitorScreen() {
     val state by SvcRuntimeManager.state.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var opMessage by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -45,20 +58,51 @@ fun SvcMonitorScreen() {
                 if (state.lastError != null) {
                     Text("Last error: ${state.lastError}", color = MaterialTheme.colorScheme.error)
                 }
+                if (opMessage != null) {
+                    Text(opMessage!!, color = MaterialTheme.colorScheme.primary)
+                }
             }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { SvcRuntimeManager.enable() }) { Text("Enable") }
-            Button(onClick = { SvcRuntimeManager.disable() }) { Text("Disable") }
+            Button(onClick = {
+                scope.launch {
+                    val ok = withContext(Dispatchers.IO) { SvcRuntimeManager.enable() }
+                    opMessage = if (ok) "Enable success" else "Enable failed"
+                }
+            }) { Text("Enable") }
+            Button(onClick = {
+                scope.launch {
+                    val ok = withContext(Dispatchers.IO) { SvcRuntimeManager.disable() }
+                    opMessage = if (ok) "Disable success" else "Disable failed"
+                }
+            }) { Text("Disable") }
             Button(onClick = { SvcRuntimeManager.reset() }) { Text("Reset") }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = {
+                val intent = Intent(context, FloatingWindowService::class.java)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+                opMessage = "Floating service start requested"
+            }) { Text("Start Floating") }
         }
     }
 }
 
 @Composable
 fun SvcFilterScreen() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var uidText by remember { mutableStateOf("-1") }
+    var pkgNameText by remember { mutableStateOf("") }
+    var expandPreset by remember { mutableStateOf(false) }
+    var opMessage by remember { mutableStateOf<String?>(null) }
+    val presets = listOf("re_basic", "re_full", "net_basic", "net_full", "ab_basic", "ab_full")
 
     Column(
         modifier = Modifier
@@ -75,16 +119,66 @@ fun SvcFilterScreen() {
             modifier = Modifier.fillMaxWidth()
         )
 
+        OutlinedTextField(
+            value = pkgNameText,
+            onValueChange = { pkgNameText = it.trim() },
+            label = { Text("Package Name (resolve UID)") },
+            modifier = Modifier.fillMaxWidth()
+        )
+
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = {
-                val uid = uidText.toIntOrNull() ?: -1
-                SvcRuntimeManager.setUid(uid)
+                scope.launch {
+                    val uid = uidText.toIntOrNull() ?: -1
+                    val ok = withContext(Dispatchers.IO) { SvcRuntimeManager.setUid(uid) }
+                    opMessage = if (ok) "UID applied: $uid" else "Failed to apply UID: $uid"
+                }
             }) { Text("Apply UID") }
-            Button(onClick = { SvcRuntimeManager.setPreset("re_basic") }) { Text("Preset re_basic") }
-            Button(onClick = { SvcRuntimeManager.setPreset("re_full") }) { Text("Preset re_full") }
+            Button(onClick = {
+                scope.launch {
+                    if (pkgNameText.isBlank()) {
+                        opMessage = "Please input package name first"
+                        return@launch
+                    }
+                    val uid = withContext(Dispatchers.IO) {
+                        kotlin.runCatching {
+                            context.packageManager.getApplicationInfo(pkgNameText, 0).uid
+                        }.getOrNull()
+                    }
+                    if (uid == null) {
+                        opMessage = "Package not found: $pkgNameText"
+                        return@launch
+                    }
+                    val ok = withContext(Dispatchers.IO) { SvcRuntimeManager.setUid(uid) }
+                    if (ok) uidText = uid.toString()
+                    opMessage = if (ok) "Package UID applied: $uid" else "Failed to apply package UID: $uid"
+                }
+            }) { Text("Apply Package") }
         }
 
-        Text("NR-specific selector UI will replace this quick filter in next pass.")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { expandPreset = true }) { Text("Select Preset") }
+            DropdownMenu(expanded = expandPreset, onDismissRequest = { expandPreset = false }) {
+                presets.forEach { p ->
+                    DropdownMenuItem(
+                        text = { Text(p) },
+                        onClick = {
+                            expandPreset = false
+                            scope.launch {
+                                val ok = withContext(Dispatchers.IO) { SvcRuntimeManager.setPreset(p) }
+                                opMessage = if (ok) "Preset applied: $p" else "Preset failed: $p"
+                            }
+                        }
+                    )
+                }
+            }
+        }
+
+        if (opMessage != null) {
+            Text(opMessage!!, color = MaterialTheme.colorScheme.primary)
+        }
+
+        Text("Includes reverse/network/AB preset shortcuts + package UID resolve.")
     }
 }
 
