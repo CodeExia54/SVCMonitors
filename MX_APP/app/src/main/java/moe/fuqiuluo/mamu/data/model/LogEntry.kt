@@ -118,7 +118,7 @@ data class LogFilterConfig(
  * 日志捕获目标
  */
 enum class LogCaptureTarget(val label: String, val description: String) {
-    SELF("This app", "Capture only Mamu logs"),
+    SELF("This app", "Capture only SVC logs"),
     ALL("All apps", "Capture logs from all apps on the system"),
     CUSTOM("Custom", "Specify a package name or PID")
 }

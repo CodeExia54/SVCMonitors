@@ -33,6 +33,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collect
 import moe.fuqiuluo.mamu.MainActivity
 import moe.fuqiuluo.mamu.R
 import moe.fuqiuluo.mamu.data.settings.filterLinuxProcess
@@ -71,6 +72,7 @@ import moe.fuqiuluo.mamu.utils.onError
 import moe.fuqiuluo.mamu.utils.onSuccess
 import moe.fuqiuluo.mamu.widget.NotificationOverlay
 import moe.fuqiuluo.mamu.widget.RealtimeMonitorOverlay
+import moe.fuqiuluo.mamu.svc.repo.SvcRuntimeManager
 
 private const val TAG = "FloatingWindowService"
 private const val NOTIFICATION_ID = 1001
@@ -122,6 +124,8 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
     // Dialog lock for process selection to prevent duplicate popups
     private val isProcessDialogShowing = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    private var svcStateObserveJob: kotlinx.coroutines.Job? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -159,6 +163,7 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         subscribeToUIActionEvents()
         subscribeToMemoryRangeChangedEvents()
         subscribeToProcessStateEvents()
+        startSvcRuntime()
 
         // Notify listeners that the overlay has started
         FloatingWindowStateManager.setActive(true)
@@ -1192,6 +1197,23 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         }
     }
 
+
+    private fun startSvcRuntime() {
+        SvcRuntimeManager.start()
+        svcStateObserveJob?.cancel()
+        svcStateObserveJob = coroutineScope.launch {
+            SvcRuntimeManager.state.collect { st ->
+                if (st.lastError != null) {
+                    Log.w(TAG, "SVC runtime error: ${st.lastError}")
+                }
+                if (st.latestEvents.isNotEmpty()) {
+                    val ev = st.latestEvents.last()
+                    Log.d(TAG, "[SVC] #${ev.seq} ${ev.name} pid=${ev.pid} tid=${ev.pid} ret=${ev.ret}")
+                }
+            }
+        }
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -1244,6 +1266,9 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         savedAddressController.cleanup()
         memoryPreviewController.cleanup()
         breakpointController.cleanup()
+
+        svcStateObserveJob?.cancel()
+        SvcRuntimeManager.stop()
 
         // Cancel coroutines
         coroutineScope.cancel()

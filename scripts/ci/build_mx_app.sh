@@ -16,6 +16,11 @@ fi
 : "${ANDROID_NDK_HOME:?ANDROID_NDK_HOME is required (or install NDK under ANDROID_SDK_ROOT/ndk)}"
 export ANDROID_NDK_HOME
 
+LOCAL_PROPERTIES="$MX_DIR/local.properties"
+if [[ ! -f "$LOCAL_PROPERTIES" ]] || ! grep -q '^sdk.dir=' "$LOCAL_PROPERTIES"; then
+  echo "sdk.dir=$ANDROID_SDK_ROOT" > "$LOCAL_PROPERTIES"
+fi
+
 if ! command -v rustup >/dev/null 2>&1; then
   echo "[ERROR] rustup not found; MX_APP requires Rust targets." >&2
   exit 1
