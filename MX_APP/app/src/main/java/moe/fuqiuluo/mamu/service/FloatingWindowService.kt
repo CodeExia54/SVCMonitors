@@ -155,8 +155,8 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         setupFullscreenView()
 
         if (!WuwaDriver.loaded) {
-            Toast.makeText(this, "Driver load failed. Please restart the app.", Toast.LENGTH_SHORT).show()
-            throw RuntimeException("WuwaDriver is not loaded")
+            Toast.makeText(this, "Wuwa driver unavailable. Running in SVC-only mode.", Toast.LENGTH_SHORT).show()
+            Log.w(TAG, "WuwaDriver not loaded, memory features may be unavailable; SVC runtime continues")
         }
 
         initializeControllers()
@@ -1088,13 +1088,13 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
 
     private fun hideFullscreen() {
         // Hide the search progress dialog if a search is in progress
-        searchController.hideSearchProgressIfNeeded()
+        if (::searchController.isInitialized) searchController.hideSearchProgressIfNeeded()
 
         fullscreenView.visibility = View.GONE
         floatingIconView.visibility = View.VISIBLE
 
         // Refresh the memory browser
-        memoryPreviewController.refreshSilently()
+        if (::memoryPreviewController.isInitialized) memoryPreviewController.refreshSilently()
 
         // Show all realtime monitors again
         RealtimeMonitorOverlay.showAll()
@@ -1108,20 +1108,20 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         floatingIconView.visibility = View.GONE
 
         // Refresh the memory browser
-        memoryPreviewController.refreshSilently()
+        if (::memoryPreviewController.isInitialized) memoryPreviewController.refreshSilently()
 
         // Refresh values in the search-result list
-        searchController.refreshSilently()
+        if (::searchController.isInitialized) searchController.refreshSilently()
 
         // Restore the search progress dialog if a search is in progress
-        searchController.showSearchProgressIfNeeded()
+        if (::searchController.isInitialized) searchController.showSearchProgressIfNeeded()
         // Restore the fuzzy-search dialog if the search completed and still has results
-        searchController.showFuzzySearchDialogIfCompleted()
+        if (::searchController.isInitialized) searchController.showFuzzySearchDialogIfCompleted()
         // Restore the pointer-scan dialog while scanning
-        searchController.showPointerScannerProgressIfNeeded()
+        if (::searchController.isInitialized) searchController.showPointerScannerProgressIfNeeded()
 
         // Automatically show the process-selection dialog if nothing is bound
-        if (!WuwaDriver.isProcessBound) {
+        if (WuwaDriver.loaded && !WuwaDriver.isProcessBound) {
             showProcessSelectionDialog()
         }
     }
@@ -1261,11 +1261,11 @@ class FloatingWindowService : Service(), ProcessDeathMonitor.Callback {
         }
 
         // Clean up controllers
-        searchController.cleanup()
-        settingsController.cleanup()
-        savedAddressController.cleanup()
-        memoryPreviewController.cleanup()
-        breakpointController.cleanup()
+        if (::searchController.isInitialized) searchController.cleanup()
+        if (::settingsController.isInitialized) settingsController.cleanup()
+        if (::savedAddressController.isInitialized) savedAddressController.cleanup()
+        if (::memoryPreviewController.isInitialized) memoryPreviewController.cleanup()
+        if (::breakpointController.isInitialized) breakpointController.cleanup()
 
         svcStateObserveJob?.cancel()
         SvcRuntimeManager.stop()
