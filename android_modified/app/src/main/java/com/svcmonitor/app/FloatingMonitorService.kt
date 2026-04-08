@@ -53,16 +53,17 @@ class FloatingMonitorService : Service() {
     // Monitor tab widgets
     private lateinit var etAppSearch: EditText
     private lateinit var spinnerApp: Spinner
-    private lateinit var spinnerPreset: Spinner
     private lateinit var tvVersion: TextView
     private lateinit var tvUid: TextView
     private lateinit var tvEventCount: TextView
     private lateinit var tvMonState: TextView
     private lateinit var btnStartStop: Button
     private lateinit var tvStatusCard: TextView
+    private lateinit var tvDashNrCount: TextView
+    private lateinit var tvDashNrList: TextView
 
     // Filter tab widgets
-    private lateinit var etNrs: EditText
+    private lateinit var switchDoFilpOpen: Switch
     private lateinit var tvNrCount: TextView
     private lateinit var tvNrList: TextView
     private lateinit var llSelectedNrs: LinearLayout
@@ -264,20 +265,23 @@ class FloatingMonitorService : Service() {
         spinnerApp = Spinner(this)
         (tabMonitor as LinearLayout).addView(spinnerApp)
         refreshAppList("")
+        (tabMonitor as LinearLayout).addView(makeBtn("Refresh Apps") { refreshAppList(etAppSearch.text.toString()) })
 
-        spinnerPreset = Spinner(this).apply {
-            adapter = ArrayAdapter(this@FloatingMonitorService, android.R.layout.simple_spinner_dropdown_item,
-                StatusParser.presets.map { "${it.name} (${it.description})" })
+        val selectedCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.WHITE)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) }
         }
-        (tabMonitor as LinearLayout).addView(spinnerPreset)
-
-        val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        row1.addView(makeBtn("Refresh Apps") { refreshAppList(etAppSearch.text.toString()) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        row1.addView(makeBtn("Apply Preset") { applyPreset() }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        (tabMonitor as LinearLayout).addView(row1)
+        selectedCard.addView(TextView(this).apply { text = "Step 2: Selected syscalls (manage in Filter tab)"; setTextColor(Color.BLACK); typeface = Typeface.DEFAULT_BOLD })
+        tvDashNrCount = TextView(this).apply { text = "Selected: 0 syscalls"; setTextColor(Color.DKGRAY) }
+        tvDashNrList = TextView(this).apply { text = "NR list: (empty)"; setTextColor(Color.DKGRAY); maxLines = 6; ellipsize = TextUtils.TruncateAt.END }
+        selectedCard.addView(tvDashNrCount)
+        selectedCard.addView(tvDashNrList)
+        (tabMonitor as LinearLayout).addView(selectedCard)
 
         btnStartStop = Button(this).apply {
-            text = "Start monitoring"
+            text = "One-tap start monitoring"
             setBackgroundColor(Color.parseColor("#2E7D32"))
             setTextColor(Color.WHITE)
             setOnClickListener { onStartStopClick() }
@@ -295,13 +299,16 @@ class FloatingMonitorService : Service() {
         filterScroll.addView(filterInner)
         (tabFilter as LinearLayout).addView(filterScroll)
 
-        filterInner.addView(TextView(this).apply { text = "Manual NR entry"; setTextColor(Color.BLACK); typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(4), 0, dp(4)) })
-        etNrs = EditText(this).apply { hint = "NR list: 56,63,64"; inputType = InputType.TYPE_CLASS_TEXT }
-        filterInner.addView(etNrs)
-        val nrButtonsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        nrButtonsRow.addView(makeBtn("Set NRs") { setNrs() }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        nrButtonsRow.addView(makeBtn("Apply selected") { applySelectedNrs() }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        filterInner.addView(nrButtonsRow)
+        switchDoFilpOpen = Switch(this).apply {
+            text = "Enable do_filp_open (lower-level open path)"
+            isChecked = false
+            setOnCheckedChangeListener { _, checked ->
+                scope.launch(Dispatchers.IO) {
+                    KpmBridge.setDoFilpOpen(checked)
+                }
+            }
+        }
+        filterInner.addView(switchDoFilpOpen)
 
         filterInner.addView(TextView(this).apply { text = "Current NR filter"; setTextColor(Color.BLACK); typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(8), 0, dp(4)) })
         tvNrCount = TextView(this).apply { text = "Selected: 0 syscalls" }
@@ -319,16 +326,48 @@ class FloatingMonitorService : Service() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(6) }
         })
 
+        filterInner.addView(TextView(this).apply { text = "Quick apply preset"; setTextColor(Color.BLACK); typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(8), 0, dp(4)) })
+        StatusParser.presets.forEach { preset ->
+            filterInner.addView(Button(this).apply {
+                text = "${preset.name}: ${preset.description}"
+                isAllCaps = false
+                setOnClickListener { applyPreset(preset.id) }
+            })
+        }
+
         filterInner.addView(TextView(this).apply { text = "Rule Sets"; setTextColor(Color.BLACK); typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(8), 0, dp(4)) })
-        val ruleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        ruleRow.addView(makeBtn("File I/O") { vmSetNrs(RuleSets.FILE_IO.toList()) })
-        ruleRow.addView(makeBtn("Network") { vmSetNrs(RuleSets.NETWORK.toList()) })
-        ruleRow.addView(makeBtn("Anti-debug") { vmSetNrs(RuleSets.ANTI_DEBUG.toList()) })
-        filterInner.addView(ruleRow)
-        val ruleRow2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        ruleRow2.addView(makeBtn("Process") { vmSetNrs(RuleSets.PROCESS.toList()) })
-        ruleRow2.addView(makeBtn("Memory") { vmSetNrs(RuleSets.MEMORY.toList()) })
-        filterInner.addView(ruleRow2)
+        filterInner.addView(makeBtn("Capture file I/O") { vmSetNrs(RuleSets.FILE_IO.toList()) })
+        filterInner.addView(makeBtn("Capture network requests") { vmSetNrs(RuleSets.NETWORK.toList()) })
+        filterInner.addView(makeBtn("Anti-debug detection") { vmSetNrs(RuleSets.ANTI_DEBUG.toList()) })
+        filterInner.addView(makeBtn("Process lifecycle") { vmSetNrs(RuleSets.PROCESS.toList()) })
+        filterInner.addView(makeBtn("Memory ops/injection") { vmSetNrs(RuleSets.MEMORY.toList()) })
+
+        filterInner.addView(TextView(this).apply { text = "Manual NR management"; setTextColor(Color.BLACK); typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(8), 0, dp(4)) })
+        val etNr = EditText(this).apply { hint = "Enter NR number (e.g. 56)"; inputType = InputType.TYPE_CLASS_NUMBER }
+        filterInner.addView(etNr)
+        val manualRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        manualRow.addView(Button(this).apply {
+            text = "Add"
+            setOnClickListener {
+                val nr = etNr.text.toString().toIntOrNull() ?: return@setOnClickListener
+                selectedNrs.add(nr)
+                refreshSelectedNrsDisplay()
+                etNr.text.clear()
+            }
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        manualRow.addView(Button(this).apply {
+            text = "Remove"
+            setOnClickListener {
+                val nr = etNr.text.toString().toIntOrNull() ?: return@setOnClickListener
+                selectedNrs.remove(nr)
+                refreshSelectedNrsDisplay()
+                etNr.text.clear()
+            }
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        filterInner.addView(manualRow)
+        filterInner.addView(makeBtn("Apply selected NRs") { applySelectedNrs() })
 
         filterInner.addView(TextView(this).apply { text = "Select syscalls by category"; setTextColor(Color.BLACK); typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(8), 0, dp(4)) })
         llAllFilterItems = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -431,8 +470,8 @@ class FloatingMonitorService : Service() {
         }
     }
 
-    private fun applyPreset() {
-        val preset = StatusParser.presets.getOrNull(spinnerPreset.selectedItemPosition) ?: return
+    private fun applyPreset(presetId: String) {
+        val preset = StatusParser.presets.firstOrNull { it.id == presetId } ?: return
         scope.launch(Dispatchers.IO) {
             KpmBridge.preset(preset.id)
             logLine("Preset applied: ${preset.id}")
@@ -454,24 +493,8 @@ class FloatingMonitorService : Service() {
         }
     }
 
-    private fun setNrs() {
-        val nrs = etNrs.text.toString().split(',').mapNotNull { it.trim().toIntOrNull() }.distinct()
-        if (nrs.isEmpty()) { Toast.makeText(this, "Invalid NR list", Toast.LENGTH_SHORT).show(); return }
-        scope.launch(Dispatchers.IO) {
-            KpmBridge.setNrs(nrs)
-            selectedNrs.clear()
-            selectedNrs.addAll(nrs)
-            logLine("Set NRs (${nrs.size}): ${nrs.joinToString(",")}")
-            launch(Dispatchers.Main) {
-                renderAllFilters(etAllNrFilter.text.toString())
-                refreshSelectedNrsDisplay()
-            }
-        }
-    }
-
     private fun applySelectedNrs() {
         val nrs = selectedNrs.toList().sorted()
-        etNrs.setText(nrs.joinToString(","))
         scope.launch(Dispatchers.IO) { if (nrs.isEmpty()) KpmBridge.disableAll() else KpmBridge.setNrs(nrs) }
     }
 
@@ -523,6 +546,11 @@ class FloatingMonitorService : Service() {
     private fun refreshSelectedNrsDisplay() {
         val sorted = selectedNrs.toList().sorted()
         llSelectedNrs.removeAllViews()
+        tvNrCount.text = "Selected: ${sorted.size} syscalls"
+        tvDashNrCount.text = "Selected: ${sorted.size} syscalls"
+        val nrLine = if (sorted.isEmpty()) "(empty)" else sorted.joinToString(", ")
+        tvNrList.text = "NR list: $nrLine"
+        tvDashNrList.text = "NR list: $nrLine"
         if (sorted.isEmpty()) {
             llSelectedNrs.addView(TextView(this).apply { text = "No syscalls selected"; setTextColor(Color.GRAY) })
         } else {
@@ -533,7 +561,6 @@ class FloatingMonitorService : Service() {
                 llSelectedNrs.addView(row)
             }
         }
-        etNrs.setText(sorted.joinToString(","))
     }
 
     private fun renderAllNrList(query: String) {
@@ -765,9 +792,12 @@ class FloatingMonitorService : Service() {
             runCatching {
                 Toast.makeText(this@FloatingMonitorService, "Exporting CSV...", Toast.LENGTH_SHORT).show()
                 val result = FullLogExporter.exportCsv(this@FloatingMonitorService)
+                val mapsFile = AddressResolver.exportRecentMapsSnapshots(this@FloatingMonitorService, 5)
                 logLine("Floating CSV exported: ${result.count} events -> ${result.file.absolutePath}")
                 Toast.makeText(this@FloatingMonitorService, "CSV exported: ${result.count} events", Toast.LENGTH_LONG).show()
-                shareExportFile(result.file, "text/csv")
+                val files = mutableListOf(result.file)
+                if (mapsFile != null) files.add(mapsFile)
+                shareExportFiles(files, "text/csv")
             }.onFailure { e ->
                 logLine("Floating CSV export failed: ${e.message}")
                 Toast.makeText(this@FloatingMonitorService, "CSV export failed: ${e.message}", Toast.LENGTH_LONG).show()
@@ -780,19 +810,37 @@ class FloatingMonitorService : Service() {
             runCatching {
                 Toast.makeText(this@FloatingMonitorService, "Exporting JSONL...", Toast.LENGTH_SHORT).show()
                 val result = FullLogExporter.exportJsonl(this@FloatingMonitorService)
+                val mapsFile = AddressResolver.exportRecentMapsSnapshots(this@FloatingMonitorService, 5)
                 logLine("Floating JSONL exported: ${result.count} events -> ${result.file.absolutePath}")
                 Toast.makeText(this@FloatingMonitorService, "JSONL exported: ${result.count} events", Toast.LENGTH_LONG).show()
-                shareExportFile(result.file, "application/x-ndjson")
+                val files = mutableListOf(result.file)
+                if (mapsFile != null) files.add(mapsFile)
+                shareExportFiles(files, "application/x-ndjson")
             }.onFailure { e ->
                 logLine("Floating JSONL export failed: ${e.message}")
                 Toast.makeText(this@FloatingMonitorService, "JSONL export failed: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
-    private fun shareExportFile(file: File, mimeType: String) {
+    private fun shareExportFiles(files: List<File>, mimeType: String) {
         try {
-            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = mimeType; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }, "Share export"))
+            if (files.isEmpty()) return
+            val uris = ArrayList<android.net.Uri>(files.size)
+            files.forEach { uris.add(FileProvider.getUriForFile(this, "$packageName.fileprovider", it)) }
+            val sendIntent = if (uris.size == 1) {
+                Intent(Intent.ACTION_SEND).apply {
+                    type = mimeType
+                    putExtra(Intent.EXTRA_STREAM, uris.first())
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            } else {
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = "*/*"
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }
+            startActivity(Intent.createChooser(sendIntent, "Share export"))
         } catch (e: Exception) { Toast.makeText(this, "Share failed: ${e.message}", Toast.LENGTH_SHORT).show() }
     }
 
@@ -828,8 +876,10 @@ class FloatingMonitorService : Service() {
                 if (s.success && s.output.isNotEmpty()) {
                     val status = StatusParser.parseStatus(s.output)
                     currentNrList = status.nrList
-                    tvNrCount.text = "Selected: ${status.nrCount} syscalls"
-                    tvNrList.text = "NR list: ${status.nrList.joinToString(", ") { "${StatusParser.nrToName(it)}($it)" }}"
+                    selectedNrs.clear()
+                    selectedNrs.addAll(status.nrList)
+                    refreshSelectedNrsDisplay()
+                    switchDoFilpOpen.isChecked = status.doFilpOpen
                     renderAllNrList(etAllNrFilter.text.toString())
                 }
                 delay(2000)
