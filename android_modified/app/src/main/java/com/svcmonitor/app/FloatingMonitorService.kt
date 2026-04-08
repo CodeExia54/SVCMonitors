@@ -299,13 +299,17 @@ class FloatingMonitorService : Service() {
         filterScroll.addView(filterInner)
         (tabFilter as LinearLayout).addView(filterScroll)
 
+        filterInner.addView(TextView(this).apply {
+            text = "Extra Hooks"
+            setTextColor(Color.BLACK)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(4), 0, dp(4))
+        })
         switchDoFilpOpen = Switch(this).apply {
             text = "Enable do_filp_open (lower-level open path)"
             isChecked = false
             setOnCheckedChangeListener { _, checked ->
-                scope.launch(Dispatchers.IO) {
-                    KpmBridge.setDoFilpOpen(checked)
-                }
+                scope.launch(Dispatchers.IO) { KpmBridge.setDoFilpOpen(checked) }
             }
         }
         filterInner.addView(switchDoFilpOpen)
