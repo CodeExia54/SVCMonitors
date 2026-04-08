@@ -636,7 +636,7 @@ class FloatingMonitorService : Service() {
             logLine("Monitoring stopped")
             launch(Dispatchers.Main) {
                 Toast.makeText(this@FloatingMonitorService, "Monitoring stopped", Toast.LENGTH_SHORT).show()
-                btnStartStop.text = "Start monitoring"
+                btnStartStop.text = "One-tap start monitoring"
                 btnStartStop.setBackgroundColor(Color.parseColor("#2E7D32"))
             }
         }
@@ -879,7 +879,6 @@ class FloatingMonitorService : Service() {
                     selectedNrs.clear()
                     selectedNrs.addAll(status.nrList)
                     refreshSelectedNrsDisplay()
-                    switchDoFilpOpen.isChecked = status.doFilpOpen
                     renderAllNrList(etAllNrFilter.text.toString())
                 }
                 delay(2000)
