@@ -95,6 +95,8 @@ class FloatingMonitorService : Service() {
     private val eventBuffer = ArrayDeque<StatusParser.SvcEvent>(500)
     private val floatingLogFile by lazy { File(getExternalFilesDir(null), "svc_floating_latest.log") }
     private var mapsAutoJob: Job? = null
+    private var lastPresetLabel: String = "(none)"
+    private var presetPinnedUntilMs: Long = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -259,7 +261,7 @@ class FloatingMonitorService : Service() {
         tvUid = TextView(this).apply { text = "Target UID: —" }
         tvEventCount = TextView(this).apply { text = "Event count: 0" }
         tvMonState = TextView(this).apply { text = "Monitoring: Not started"; setTextColor(Color.GRAY) }
-        tvPresetState = TextView(this).apply { text = "Preset: (none)"; setTextColor(Color.DKGRAY) }
+        tvPresetState = TextView(this).apply { text = "Preset: $lastPresetLabel"; setTextColor(Color.DKGRAY) }
         statusCard.addView(tvStatusCard)
         statusCard.addView(tvVersion)
         statusCard.addView(tvUid)
@@ -494,7 +496,9 @@ class FloatingMonitorService : Service() {
             if (r.success) {
                 logLine("Preset applied: ${preset.id}")
                 launch(Dispatchers.Main) {
-                    tvPresetState.text = "Preset: ${preset.name}"
+                    lastPresetLabel = preset.name
+                    presetPinnedUntilMs = System.currentTimeMillis() + 8000L
+                    tvPresetState.text = "Preset: $lastPresetLabel"
                     Toast.makeText(this@FloatingMonitorService, "Preset ${preset.name} applied", Toast.LENGTH_SHORT).show()
                 }
                 syncSelectionFromStatus()
@@ -514,6 +518,8 @@ class FloatingMonitorService : Service() {
             selectedNrs.addAll(nrs)
             launch(Dispatchers.Main) {
                 tvPresetState.text = "Preset: Custom"
+                lastPresetLabel = "Custom"
+                presetPinnedUntilMs = System.currentTimeMillis() + 5000L
                 refreshSelectedNrsDisplay()
                 renderAllFilters(etAllNrFilter.text.toString())
                 renderAllNrList(etAllNrFilter.text.toString())
@@ -528,6 +534,8 @@ class FloatingMonitorService : Service() {
             selectedNrs.clear()
             launch(Dispatchers.Main) {
                 tvPresetState.text = "Preset: (none)"
+                lastPresetLabel = "(none)"
+                presetPinnedUntilMs = 0L
                 refreshSelectedNrsDisplay()
                 renderAllFilters(etAllNrFilter.text.toString())
                 renderAllNrList(etAllNrFilter.text.toString())
@@ -542,6 +550,8 @@ class FloatingMonitorService : Service() {
             if (nrs.isEmpty()) KpmBridge.disableAll() else KpmBridge.setNrs(nrs)
             launch(Dispatchers.Main) {
                 tvPresetState.text = "Preset: Custom"
+                lastPresetLabel = "Custom"
+                presetPinnedUntilMs = System.currentTimeMillis() + 5000L
                 refreshSelectedNrsDisplay()
                 renderAllFilters(etAllNrFilter.text.toString())
                 renderAllNrList(etAllNrFilter.text.toString())
@@ -657,6 +667,8 @@ class FloatingMonitorService : Service() {
             selectedNrs.add(nr)
             launch(Dispatchers.Main) {
                 tvPresetState.text = "Preset: Custom"
+                lastPresetLabel = "Custom"
+                presetPinnedUntilMs = System.currentTimeMillis() + 5000L
                 refreshSelectedNrsDisplay()
                 renderAllFilters(etAllNrFilter.text.toString())
                 renderAllNrList(etAllNrFilter.text.toString())
@@ -671,6 +683,8 @@ class FloatingMonitorService : Service() {
             selectedNrs.remove(nr)
             launch(Dispatchers.Main) {
                 tvPresetState.text = "Preset: Custom"
+                lastPresetLabel = "Custom"
+                presetPinnedUntilMs = System.currentTimeMillis() + 5000L
                 refreshSelectedNrsDisplay()
                 renderAllFilters(etAllNrFilter.text.toString())
                 renderAllNrList(etAllNrFilter.text.toString())
@@ -979,10 +993,17 @@ class FloatingMonitorService : Service() {
                     currentNrList = status.nrList
                     selectedNrs.clear()
                     selectedNrs.addAll(status.nrList)
+                    val now = System.currentTimeMillis()
                     if (status.nrList.isEmpty()) {
-                        tvPresetState.text = "Preset: (none)"
+                        if (now > presetPinnedUntilMs) {
+                            lastPresetLabel = "(none)"
+                            tvPresetState.text = "Preset: (none)"
+                        } else {
+                            tvPresetState.text = "Preset: $lastPresetLabel"
+                        }
                     } else if (tvPresetState.text.toString() == "Preset: (none)") {
-                        tvPresetState.text = "Preset: Custom"
+                        if (lastPresetLabel == "(none)") lastPresetLabel = "Custom"
+                        tvPresetState.text = "Preset: $lastPresetLabel"
                     }
                     refreshSelectedNrsDisplay()
                     renderAllFilters(etAllNrFilter.text.toString())
