@@ -73,6 +73,7 @@ class FloatingMonitorService : Service() {
     private lateinit var llAllFilterItems: LinearLayout
     private val selectedNrs = linkedSetOf<Int>()
     private var currentNrList: List<Int> = emptyList()
+    private var hasPendingNrSelectionChanges: Boolean = false
 
     // Events tab widgets
     private lateinit var evtListContainer: LinearLayout
@@ -502,6 +503,7 @@ class FloatingMonitorService : Service() {
                     Toast.makeText(this@FloatingMonitorService, "Preset ${preset.name} applied", Toast.LENGTH_SHORT).show()
                 }
                 syncSelectionFromStatus()
+                hasPendingNrSelectionChanges = false
             } else {
                 logLine("Preset apply failed: ${preset.id}: ${r.error}")
                 launch(Dispatchers.Main) {
@@ -523,6 +525,7 @@ class FloatingMonitorService : Service() {
                 refreshSelectedNrsDisplay()
                 renderAllFilters(etAllNrFilter.text.toString())
                 renderAllNrList(etAllNrFilter.text.toString())
+                hasPendingNrSelectionChanges = false
                 Toast.makeText(this@FloatingMonitorService, "Set ${nrs.size} syscalls", Toast.LENGTH_SHORT).show()
             }
         }
@@ -539,6 +542,7 @@ class FloatingMonitorService : Service() {
                 refreshSelectedNrsDisplay()
                 renderAllFilters(etAllNrFilter.text.toString())
                 renderAllNrList(etAllNrFilter.text.toString())
+                hasPendingNrSelectionChanges = false
                 Toast.makeText(this@FloatingMonitorService, "All NRs disabled", Toast.LENGTH_SHORT).show()
             }
         }
@@ -567,6 +571,7 @@ class FloatingMonitorService : Service() {
         selectedNrs.clear()
         selectedNrs.addAll(status.nrList)
         currentNrList = status.nrList
+        hasPendingNrSelectionChanges = false
         withContext(Dispatchers.Main) {
             refreshSelectedNrsDisplay()
             renderAllFilters(etAllNrFilter.text.toString())
@@ -597,6 +602,7 @@ class FloatingMonitorService : Service() {
                     isChecked = selectedNrs.contains(sc.nr)
                     setOnCheckedChangeListener { _, checked ->
                         if (checked) selectedNrs.add(sc.nr) else selectedNrs.remove(sc.nr)
+                        hasPendingNrSelectionChanges = true
                         val allChecked = matching.all { selectedNrs.contains(it.nr) }
                         catCheckBox.isChecked = allChecked
                         refreshSelectedNrsDisplay()
@@ -608,6 +614,7 @@ class FloatingMonitorService : Service() {
 
             catCheckBox.setOnCheckedChangeListener { _, isChecked ->
                 for (sc in matching) { if (isChecked) selectedNrs.add(sc.nr) else selectedNrs.remove(sc.nr) }
+                hasPendingNrSelectionChanges = true
                 for (i in 0 until syscallsContainer.childCount) {
                     (syscallsContainer.getChildAt(i) as? CheckBox)?.isChecked = isChecked
                 }
@@ -643,7 +650,7 @@ class FloatingMonitorService : Service() {
         if (!::llAllNrList.isInitialized) return
         llAllNrList.removeAllViews()
         val q = query.trim().lowercase()
-        val selected = currentNrList.toHashSet()
+        val selected = selectedNrs.toHashSet()
         var shown = 0
         for (nr in 0..459) {
             val name = StatusParser.nrToName(nr)
@@ -672,6 +679,7 @@ class FloatingMonitorService : Service() {
                 refreshSelectedNrsDisplay()
                 renderAllFilters(etAllNrFilter.text.toString())
                 renderAllNrList(etAllNrFilter.text.toString())
+                hasPendingNrSelectionChanges = false
                 Toast.makeText(this@FloatingMonitorService, "Added NR $nr", Toast.LENGTH_SHORT).show()
             }
         }
@@ -688,6 +696,7 @@ class FloatingMonitorService : Service() {
                 refreshSelectedNrsDisplay()
                 renderAllFilters(etAllNrFilter.text.toString())
                 renderAllNrList(etAllNrFilter.text.toString())
+                hasPendingNrSelectionChanges = false
                 Toast.makeText(this@FloatingMonitorService, "Removed NR $nr", Toast.LENGTH_SHORT).show()
             }
         }
@@ -991,8 +1000,10 @@ class FloatingMonitorService : Service() {
                 if (s.success && s.output.isNotEmpty()) {
                     val status = StatusParser.parseStatus(s.output)
                     currentNrList = status.nrList
-                    selectedNrs.clear()
-                    selectedNrs.addAll(status.nrList)
+                    if (!hasPendingNrSelectionChanges) {
+                        selectedNrs.clear()
+                        selectedNrs.addAll(status.nrList)
+                    }
                     val now = System.currentTimeMillis()
                     if (status.nrList.isEmpty()) {
                         if (now > presetPinnedUntilMs) {

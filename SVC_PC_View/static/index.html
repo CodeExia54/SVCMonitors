@@ -600,9 +600,9 @@ a:hover { text-decoration: underline; }
       </div>
 
       <div class="detail-section" v-if="detailEvent.bt_depth > 0">
-        <h4>Backtrace ({{ detailEvent.bt_depth }} frames)</h4>
+        <h4>Backtrace ({{ extractBacktraceAddrs(detailEvent).length }} parsed / {{ detailEvent.bt_depth }} frames)</h4>
         <ul class="backtrace-list">
-          <li v-for="(addr, i) in parseBacktrace(detailEvent)" :key="i">
+          <li v-for="(addr, i) in extractBacktraceAddrs(detailEvent)" :key="i">
             #{{ i }} 0x{{ addr }}
           </li>
         </ul>
@@ -623,6 +623,9 @@ a:hover { text-decoration: underline; }
             return base + sym;
           }).join('\n')
         }}</pre>
+        <div style="margin-top:6px;color:var(--text2);font-size:11px;">
+          Note: "unmapped" usually means the address is not present in current <code>/proc/&lt;pid&gt;/maps</code> (process exited, map changed, or stale PID).
+        </div>
       </div>
 
       <div class="detail-section" v-if="detailEvent && detailEvent.name && (detailEvent.name.includes('mmap') || detailEvent.name.includes('mprotect'))">
@@ -1119,11 +1122,12 @@ createApp({
     async function refreshResolvedBacktrace() {
       const ev = detailEvent.value;
       resolvedBacktrace.value = [];
-      if (!ev || !ev.pid || !ev.backtrace || !Array.isArray(ev.backtrace)) return;
+      if (!ev || !ev.pid) return;
+      const addrs = extractBacktraceAddrs(ev);
+      if (!addrs.length) return;
       await ensureMapsForPid(ev.pid);
       const out = [];
-      for (const x of ev.backtrace.slice(0, 24)) {
-        const addr = typeof x === 'number' ? x : parseInt(String(x).replace(/^0x/, ''), 16);
+      for (const addr of addrs) {
         if (!addr) continue;
         const m = resolveAddrByMaps(ev.pid, addr);
         if (!m) {
@@ -1229,15 +1233,37 @@ createApp({
       return null;
     }
 
-    function parseBacktrace(ev) {
-      if (!ev.backtrace) return [];
-      if (typeof ev.backtrace === 'string') {
-        return ev.backtrace.split(',').map(s => s.trim());
-      }
+    function extractBacktraceAddrs(ev) {
+      if (!ev) return [];
+      const out = [];
+      const pushAddr = (v) => {
+        if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
+          out.push(v);
+          return;
+        }
+        const m = String(v || '').match(/0x[0-9a-fA-F]+|\b[0-9a-fA-F]{6,16}\b/g);
+        if (!m) return;
+        for (const tok of m) {
+          const n = Number.parseInt(tok.replace(/^0x/i, ''), 16);
+          if (Number.isFinite(n) && n > 0) out.push(n);
+        }
+      };
+
       if (Array.isArray(ev.backtrace)) {
-        return ev.backtrace.map(a => typeof a === 'number' ? a.toString(16) : a);
+        for (const a of ev.backtrace) pushAddr(a);
+      } else if (typeof ev.backtrace === 'string') {
+        ev.backtrace.split(/[\s,]+/).forEach(pushAddr);
       }
-      return [];
+
+      // Fallbacks for older/newer event payloads.
+      if (!out.length && typeof ev.bt_hex === 'string') ev.bt_hex.split(/[\s,]+/).forEach(pushAddr);
+      if (!out.length && typeof ev.fp_chain === 'string') ev.fp_chain.split(/[\s,]+/).forEach(pushAddr);
+
+      return Array.from(new Set(out));
+    }
+
+    function parseBacktrace(ev) {
+      return extractBacktraceAddrs(ev).map(a => a.toString(16));
     }
 
     // ─── PID Analysis ───
