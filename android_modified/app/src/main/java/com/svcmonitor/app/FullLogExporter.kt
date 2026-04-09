@@ -26,16 +26,16 @@ object FullLogExporter {
             w.write(ExportEventFormatter.csvHeader())
             w.newLine()
             while (cursorId < maxId) {
-                val chunk = dao.afterId(cursorId, 1000).filter { it.id <= maxId }
+                val chunk = dao.afterId(cursorId, 1000)
                 if (chunk.isEmpty()) break
                 for (entity in chunk) {
+                    if (entity.id > maxId) break
                     val e = entity.toSvcEvent()
                     w.write(ExportEventFormatter.toCsvLine(e))
                     w.newLine()
                     cursorId = entity.id
                     count++
                 }
-                w.flush()
             }
         }
         if (count == 0) throw IllegalStateException("No events to export")
@@ -52,16 +52,16 @@ object FullLogExporter {
         var count = 0
         outFile.bufferedWriter().use { w ->
             while (cursorId < maxId) {
-                val chunk = dao.afterId(cursorId, 1000).filter { it.id <= maxId }
+                val chunk = dao.afterId(cursorId, 1000)
                 if (chunk.isEmpty()) break
                 for (entity in chunk) {
+                    if (entity.id > maxId) break
                     val e = entity.toSvcEvent()
                     w.write(ExportEventFormatter.toJsonObject(e).toString())
                     w.newLine()
                     cursorId = entity.id
                     count++
                 }
-                w.flush()
             }
         }
         if (count == 0) throw IllegalStateException("No events to export")

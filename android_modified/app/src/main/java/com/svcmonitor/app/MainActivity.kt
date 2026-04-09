@@ -23,6 +23,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.Observer
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewModelScope
 import com.svcmonitor.app.db.SvcEventDb
@@ -114,6 +115,10 @@ class MainActivity : AppCompatActivity() {
     private var pcServerSocket: java.net.ServerSocket? = null
     private val pcServerClients = ArrayList<java.io.BufferedWriter>(4)
     private var pcServerBacklogLimit = 20000
+    private var pcServerObserverAttached = false
+    private val pcServerNewEventsObserver = Observer<List<StatusParser.SvcEvent>> { events ->
+        if (!events.isNullOrEmpty()) broadcastPcServerEvents(events)
+    }
 
     private data class SensitiveRule(val needle: String, val color: Int)
     private val sensitiveRules by lazy {
@@ -1337,7 +1342,6 @@ class MainActivity : AppCompatActivity() {
         vm.newEvents.observe(this) { events ->
             if (events.isNotEmpty()) {
                 enqueueRelayEvents(events)
-                broadcastPcServerEvents(events)
             }
         }
 
@@ -1663,6 +1667,10 @@ class MainActivity : AppCompatActivity() {
     private fun startPcServer() {
         if (pcServerJob != null) return
         if (pcServerPort <= 0 || pcServerPort > 65535) pcServerPort = 8080
+        if (!pcServerObserverAttached) {
+            vm.newEvents.observeForever(pcServerNewEventsObserver)
+            pcServerObserverAttached = true
+        }
         pcServerJob = lifecycleScope.launch(Dispatchers.IO) {
             var ss: java.net.ServerSocket? = null
             try {
@@ -1743,6 +1751,10 @@ class MainActivity : AppCompatActivity() {
     private fun stopPcServer() {
         pcServerJob?.cancel()
         pcServerJob = null
+        if (pcServerObserverAttached) {
+            vm.newEvents.removeObserver(pcServerNewEventsObserver)
+            pcServerObserverAttached = false
+        }
         try { pcServerSocket?.close() } catch (_: Exception) {}
         pcServerSocket = null
         synchronized(pcServerClients) {
@@ -2627,6 +2639,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopPcServer()
+        stopRelay()
         vm.stopPolling()
     }
 }
