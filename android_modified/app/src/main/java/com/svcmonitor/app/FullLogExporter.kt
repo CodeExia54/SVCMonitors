@@ -26,7 +26,7 @@ object FullLogExporter {
             w.write(ExportEventFormatter.csvHeader())
             w.newLine()
             while (cursorId < maxId) {
-                val chunk = dao.afterId(cursorId, 5000)
+                val chunk = dao.afterId(cursorId, 1000)
                 if (chunk.isEmpty()) break
                 for (entity in chunk) {
                     if (entity.id > maxId) break
@@ -52,7 +52,7 @@ object FullLogExporter {
         var count = 0
         outFile.bufferedWriter().use { w ->
             while (cursorId < maxId) {
-                val chunk = dao.afterId(cursorId, 5000)
+                val chunk = dao.afterId(cursorId, 1000)
                 if (chunk.isEmpty()) break
                 for (entity in chunk) {
                     if (entity.id > maxId) break

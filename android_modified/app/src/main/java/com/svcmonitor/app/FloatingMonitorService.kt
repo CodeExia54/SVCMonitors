@@ -836,7 +836,7 @@ class FloatingMonitorService : Service() {
                 .sortedBy { it.seq }
                 .toList()
             if (fresh.isEmpty()) return@launch
-            val now = System.nanoTime()
+            val now = System.currentTimeMillis() * 1_000_000L
             eventDao.insertAll(fresh.map { it.toEntity("", now) })
             lastPersistedSeq = fresh.last().seq
         }
