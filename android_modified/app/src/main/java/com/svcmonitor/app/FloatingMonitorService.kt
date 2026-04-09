@@ -239,7 +239,10 @@ class FloatingMonitorService : Service() {
             setPadding(dp(8), dp(8), dp(8), dp(8))
         }
         tabMonitor = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
             addView(monitorInner)
         }
 
