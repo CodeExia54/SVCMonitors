@@ -36,6 +36,34 @@ object AddressResolver {
     private const val MAPS_TTL_MS = 5000L
     private const val MAX_SNAPSHOTS_PER_PID = 5
 
+    suspend fun captureSnapshot(pid: Int): Boolean {
+        if (pid <= 0) return false
+        return getMapsRegions(pid)?.isNotEmpty() == true
+    }
+
+    fun persistRecentRawMapsFiles(context: Context, pid: Int, limit: Int = 5): List<File> {
+        if (pid <= 0) return emptyList()
+        val snapshots = synchronized(mapsHistory) {
+            mapsHistory[pid]?.toList().orEmpty()
+        }
+        if (snapshots.isEmpty()) return emptyList()
+
+        val outDir = File(context.getExternalFilesDir(null), "exports/maps_auto").apply { mkdirs() }
+        val selected = snapshots.takeLast(limit.coerceAtLeast(1))
+        val out = ArrayList<File>(selected.size)
+        selected.forEachIndexed { idx, snap ->
+            val file = File(outDir, "svc_maps_pid${pid}_${idx + 1}.txt")
+            file.bufferedWriter().use { w ->
+                w.write("# pid=$pid slot=${idx + 1}/${selected.size} ts_ms=${snap.tsMs} region_count=${snap.regionCount} total_size=${snap.totalSize}")
+                w.newLine()
+                w.write(snap.rawMaps.trimEnd())
+                w.newLine()
+            }
+            out.add(file)
+        }
+        return out
+    }
+
     fun getRecentSnapshotSummaries(pid: Int, limit: Int = 5): List<String> {
         if (pid <= 0) return emptyList()
         val snapshots = synchronized(mapsHistory) {

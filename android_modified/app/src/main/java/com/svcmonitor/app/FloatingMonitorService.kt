@@ -93,6 +93,7 @@ class FloatingMonitorService : Service() {
     private var emptyBinPolls = 0
     private val eventBuffer = ArrayDeque<StatusParser.SvcEvent>(500)
     private val floatingLogFile by lazy { File(getExternalFilesDir(null), "svc_floating_latest.log") }
+    private var mapsAutoJob: Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -125,6 +126,8 @@ class FloatingMonitorService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        mapsAutoJob?.cancel()
+        mapsAutoJob = null
         scope.cancel()
         runCatching { wm.removeView(iconView) }
         runCatching { wm.removeView(panelView) }
@@ -231,9 +234,13 @@ class FloatingMonitorService : Service() {
         card.addView(content)
 
         // ==================== Monitor Tab ====================
-        tabMonitor = LinearLayout(this).apply {
+        val monitorInner = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
+        tabMonitor = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            addView(monitorInner)
         }
 
         val statusCard = LinearLayout(this).apply {
@@ -253,19 +260,19 @@ class FloatingMonitorService : Service() {
         statusCard.addView(tvUid)
         statusCard.addView(tvEventCount)
         statusCard.addView(tvMonState)
-        (tabMonitor as LinearLayout).addView(statusCard)
+        monitorInner.addView(statusCard)
 
-        (tabMonitor as LinearLayout).addView(TextView(this).apply { text = "Select target app"; setTextColor(Color.BLACK); typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(8), 0, dp(4)) })
+        monitorInner.addView(TextView(this).apply { text = "Select target app"; setTextColor(Color.BLACK); typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(8), 0, dp(4)) })
         etAppSearch = EditText(this).apply { hint = "Search app / package name"; inputType = InputType.TYPE_CLASS_TEXT; addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) { refreshAppList(s.toString()) }
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         }) }
-        (tabMonitor as LinearLayout).addView(etAppSearch)
+        monitorInner.addView(etAppSearch)
         spinnerApp = Spinner(this)
-        (tabMonitor as LinearLayout).addView(spinnerApp)
+        monitorInner.addView(spinnerApp)
         refreshAppList("")
-        (tabMonitor as LinearLayout).addView(makeBtn("Refresh Apps") { refreshAppList(etAppSearch.text.toString()) })
+        monitorInner.addView(makeBtn("Refresh Apps") { refreshAppList(etAppSearch.text.toString()) })
 
         val selectedCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -278,7 +285,7 @@ class FloatingMonitorService : Service() {
         tvDashNrList = TextView(this).apply { text = "NR list: (empty)"; setTextColor(Color.DKGRAY); maxLines = 6; ellipsize = TextUtils.TruncateAt.END }
         selectedCard.addView(tvDashNrCount)
         selectedCard.addView(tvDashNrList)
-        (tabMonitor as LinearLayout).addView(selectedCard)
+        monitorInner.addView(selectedCard)
 
         btnStartStop = Button(this).apply {
             text = "One-tap start monitoring"
@@ -287,7 +294,7 @@ class FloatingMonitorService : Service() {
             setOnClickListener { onStartStopClick() }
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) }
         }
-        (tabMonitor as LinearLayout).addView(btnStartStop)
+        monitorInner.addView(btnStartStop)
 
         // ==================== Filter Tab ====================
         tabFilter = LinearLayout(this).apply {
@@ -626,6 +633,7 @@ class FloatingMonitorService : Service() {
             useJsonFallback = false
             emptyBinPolls = 0
             logLine("Monitoring started for uid=${app.uid}")
+            startAutoMapsSnapshots()
             launch(Dispatchers.Main) {
                 Toast.makeText(this@FloatingMonitorService, "Monitoring started for ${app.label}", Toast.LENGTH_SHORT).show()
                 btnStartStop.text = "Stop monitoring"
@@ -637,11 +645,31 @@ class FloatingMonitorService : Service() {
     private fun stopMonitoring() {
         scope.launch(Dispatchers.IO) {
             KpmBridge.disable()
+            mapsAutoJob?.cancel()
+            mapsAutoJob = null
             logLine("Monitoring stopped")
             launch(Dispatchers.Main) {
                 Toast.makeText(this@FloatingMonitorService, "Monitoring stopped", Toast.LENGTH_SHORT).show()
                 btnStartStop.text = "One-tap start monitoring"
                 btnStartStop.setBackgroundColor(Color.parseColor("#2E7D32"))
+            }
+        }
+    }
+
+    private fun startAutoMapsSnapshots() {
+        mapsAutoJob?.cancel()
+        mapsAutoJob = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                val tgids = synchronized(eventBuffer) { eventBuffer.map { it.tgid }.filter { it > 0 }.distinct() }
+                tgids.forEach { pid ->
+                    runCatching {
+                        AddressResolver.captureSnapshot(pid)
+                        AddressResolver.persistRecentRawMapsFiles(this@FloatingMonitorService, pid, 5)
+                    }.onFailure { e ->
+                        logLine("Auto maps snapshot failed for pid=$pid: ${e.message}")
+                    }
+                }
+                delay(5000L)
             }
         }
     }
