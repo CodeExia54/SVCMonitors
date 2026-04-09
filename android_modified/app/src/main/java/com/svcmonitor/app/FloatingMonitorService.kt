@@ -57,6 +57,7 @@ class FloatingMonitorService : Service() {
     private lateinit var tvUid: TextView
     private lateinit var tvEventCount: TextView
     private lateinit var tvMonState: TextView
+    private lateinit var tvPresetState: TextView
     private lateinit var btnStartStop: Button
     private lateinit var tvStatusCard: TextView
     private lateinit var tvDashNrCount: TextView
@@ -258,11 +259,13 @@ class FloatingMonitorService : Service() {
         tvUid = TextView(this).apply { text = "Target UID: —" }
         tvEventCount = TextView(this).apply { text = "Event count: 0" }
         tvMonState = TextView(this).apply { text = "Monitoring: Not started"; setTextColor(Color.GRAY) }
+        tvPresetState = TextView(this).apply { text = "Preset: (none)"; setTextColor(Color.DKGRAY) }
         statusCard.addView(tvStatusCard)
         statusCard.addView(tvVersion)
         statusCard.addView(tvUid)
         statusCard.addView(tvEventCount)
         statusCard.addView(tvMonState)
+        statusCard.addView(tvPresetState)
         monitorInner.addView(statusCard)
 
         monitorInner.addView(TextView(this).apply { text = "Select target app"; setTextColor(Color.BLACK); typeface = Typeface.DEFAULT_BOLD; setPadding(0, dp(8), 0, dp(4)) })
@@ -489,14 +492,26 @@ class FloatingMonitorService : Service() {
         scope.launch(Dispatchers.IO) {
             KpmBridge.preset(preset.id)
             logLine("Preset applied: ${preset.id}")
-            launch(Dispatchers.Main) { Toast.makeText(this@FloatingMonitorService, "Preset ${preset.name} applied", Toast.LENGTH_SHORT).show() }
+            launch(Dispatchers.Main) {
+                tvPresetState.text = "Preset: ${preset.name}"
+                Toast.makeText(this@FloatingMonitorService, "Preset ${preset.name} applied", Toast.LENGTH_SHORT).show()
+            }
+            syncSelectionFromStatus()
         }
     }
 
     private fun vmSetNrs(nrs: List<Int>) {
         scope.launch(Dispatchers.IO) {
             KpmBridge.setNrs(nrs)
-            launch(Dispatchers.Main) { Toast.makeText(this@FloatingMonitorService, "Set ${nrs.size} syscalls", Toast.LENGTH_SHORT).show() }
+            selectedNrs.clear()
+            selectedNrs.addAll(nrs)
+            launch(Dispatchers.Main) {
+                tvPresetState.text = "Preset: Custom"
+                refreshSelectedNrsDisplay()
+                renderAllFilters(etAllNrFilter.text.toString())
+                renderAllNrList(etAllNrFilter.text.toString())
+                Toast.makeText(this@FloatingMonitorService, "Set ${nrs.size} syscalls", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -509,7 +524,30 @@ class FloatingMonitorService : Service() {
 
     private fun applySelectedNrs() {
         val nrs = selectedNrs.toList().sorted()
-        scope.launch(Dispatchers.IO) { if (nrs.isEmpty()) KpmBridge.disableAll() else KpmBridge.setNrs(nrs) }
+        scope.launch(Dispatchers.IO) {
+            if (nrs.isEmpty()) KpmBridge.disableAll() else KpmBridge.setNrs(nrs)
+            launch(Dispatchers.Main) {
+                tvPresetState.text = "Preset: Custom"
+                refreshSelectedNrsDisplay()
+                renderAllFilters(etAllNrFilter.text.toString())
+                renderAllNrList(etAllNrFilter.text.toString())
+            }
+            syncSelectionFromStatus()
+        }
+    }
+
+    private suspend fun syncSelectionFromStatus() {
+        val s = KpmBridge.status()
+        if (!s.success || s.output.isBlank()) return
+        val status = StatusParser.parseStatus(s.output)
+        selectedNrs.clear()
+        selectedNrs.addAll(status.nrList)
+        currentNrList = status.nrList
+        withContext(Dispatchers.Main) {
+            refreshSelectedNrsDisplay()
+            renderAllFilters(etAllNrFilter.text.toString())
+            renderAllNrList(etAllNrFilter.text.toString())
+        }
     }
 
     private fun renderAllFilters(rawQuery: String) {
@@ -602,14 +640,28 @@ class FloatingMonitorService : Service() {
     private fun addNr(nr: Int) {
         scope.launch(Dispatchers.IO) {
             KpmBridge.enableNr(nr)
-            launch(Dispatchers.Main) { Toast.makeText(this@FloatingMonitorService, "Added NR $nr", Toast.LENGTH_SHORT).show() }
+            selectedNrs.add(nr)
+            launch(Dispatchers.Main) {
+                tvPresetState.text = "Preset: Custom"
+                refreshSelectedNrsDisplay()
+                renderAllFilters(etAllNrFilter.text.toString())
+                renderAllNrList(etAllNrFilter.text.toString())
+                Toast.makeText(this@FloatingMonitorService, "Added NR $nr", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
     private fun removeNr(nr: Int) {
         scope.launch(Dispatchers.IO) {
             KpmBridge.disableNr(nr)
-            launch(Dispatchers.Main) { Toast.makeText(this@FloatingMonitorService, "Removed NR $nr", Toast.LENGTH_SHORT).show() }
+            selectedNrs.remove(nr)
+            launch(Dispatchers.Main) {
+                tvPresetState.text = "Preset: Custom"
+                refreshSelectedNrsDisplay()
+                renderAllFilters(etAllNrFilter.text.toString())
+                renderAllNrList(etAllNrFilter.text.toString())
+                Toast.makeText(this@FloatingMonitorService, "Removed NR $nr", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -913,6 +965,7 @@ class FloatingMonitorService : Service() {
                     currentNrList = status.nrList
                     selectedNrs.clear()
                     selectedNrs.addAll(status.nrList)
+                    tvPresetState.text = if (status.nrList.isEmpty()) "Preset: (none)" else "Preset: Custom"
                     refreshSelectedNrsDisplay()
                     renderAllNrList(etAllNrFilter.text.toString())
                 }
