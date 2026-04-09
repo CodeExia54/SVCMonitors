@@ -111,9 +111,11 @@ class MainActivity : AppCompatActivity() {
     private var pcServerEnabled = false
     private var pcServerPort = 8080
     private var pcServerJob: kotlinx.coroutines.Job? = null
+    private var pcServerTailJob: kotlinx.coroutines.Job? = null
     private var pcServerSocket: java.net.ServerSocket? = null
     private val pcServerClients = ArrayList<java.io.BufferedWriter>(4)
     private var pcServerBacklogLimit = 20000
+    @Volatile private var pcServerLastSentSeq: Long = 0L
 
     private data class SensitiveRule(val needle: String, val color: Int)
     private val sensitiveRules by lazy {
@@ -1663,6 +1665,7 @@ class MainActivity : AppCompatActivity() {
     private fun startPcServer() {
         if (pcServerJob != null) return
         if (pcServerPort <= 0 || pcServerPort > 65535) pcServerPort = 8080
+        startPcServerDbTail()
         pcServerJob = lifecycleScope.launch(Dispatchers.IO) {
             var ss: java.net.ServerSocket? = null
             try {
@@ -1743,6 +1746,8 @@ class MainActivity : AppCompatActivity() {
     private fun stopPcServer() {
         pcServerJob?.cancel()
         pcServerJob = null
+        pcServerTailJob?.cancel()
+        pcServerTailJob = null
         try { pcServerSocket?.close() } catch (_: Exception) {}
         pcServerSocket = null
         synchronized(pcServerClients) {
@@ -1750,6 +1755,40 @@ class MainActivity : AppCompatActivity() {
                 try { w.close() } catch (_: Exception) {}
             }
             pcServerClients.clear()
+        }
+    }
+
+    private fun startPcServerDbTail() {
+        if (pcServerTailJob != null) return
+        pcServerTailJob = lifecycleScope.launch(Dispatchers.IO) {
+            val dao = SvcEventDb.get(applicationContext).dao()
+            while (pcServerEnabled) {
+                try {
+                    val chunk = dao.afterSeq(pcServerLastSentSeq, 256)
+                    if (chunk.isEmpty()) {
+                        delay(400)
+                        continue
+                    }
+                    val lines = ArrayList<String>(chunk.size)
+                    for (e in chunk) lines.add(entityToJsonLineWithResolved(e))
+                    synchronized(pcServerClients) {
+                        val it = pcServerClients.iterator()
+                        while (it.hasNext()) {
+                            val w = it.next()
+                            try {
+                                for (ln in lines) w.write(ln)
+                                w.flush()
+                            } catch (_: Exception) {
+                                try { w.close() } catch (_: Exception) {}
+                                it.remove()
+                            }
+                        }
+                    }
+                    pcServerLastSentSeq = maxOf(pcServerLastSentSeq, chunk.last().seq)
+                } catch (_: Exception) {
+                    delay(700)
+                }
+            }
         }
     }
 
@@ -1771,6 +1810,7 @@ class MainActivity : AppCompatActivity() {
                     sent += chunk.size
                     if (chunk.size < chunkLimit) break
                 }
+                pcServerLastSentSeq = maxOf(pcServerLastSentSeq, cursor)
             } else {
                 val list = try { dao.latest(pcServerBacklogLimit).asReversed() } catch (_: Exception) { emptyList() }
                 if (list.isEmpty()) return
@@ -1778,6 +1818,7 @@ class MainActivity : AppCompatActivity() {
                     w.write(entityToJsonLineWithResolved(e))
                 }
                 w.flush()
+                pcServerLastSentSeq = maxOf(pcServerLastSentSeq, list.last().seq)
             }
         } catch (_: Exception) {
         }
@@ -1837,6 +1878,7 @@ class MainActivity : AppCompatActivity() {
     private fun broadcastPcServerEvents(events: List<StatusParser.SvcEvent>) {
         if (!pcServerEnabled) return
         if (events.isEmpty()) return
+        pcServerLastSentSeq = maxOf(pcServerLastSentSeq, events.maxOfOrNull { it.seq } ?: 0L)
         lifecycleScope.launch {
             val lines = events.map { eventToJsonLineWithResolved(it) }
             synchronized(pcServerClients) {

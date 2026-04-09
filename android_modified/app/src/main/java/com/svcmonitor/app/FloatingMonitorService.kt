@@ -28,6 +28,8 @@ import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
+import com.svcmonitor.app.db.SvcEventDb
+import com.svcmonitor.app.db.toEntity
 import kotlinx.coroutines.*
 import java.io.File
 import java.text.SimpleDateFormat
@@ -98,6 +100,8 @@ class FloatingMonitorService : Service() {
     private var mapsAutoJob: Job? = null
     private var lastPresetLabel: String = "(none)"
     private var presetPinnedUntilMs: Long = 0L
+    private val eventDao by lazy { SvcEventDb.get(applicationContext).dao() }
+    @Volatile private var lastPersistedSeq: Long = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -119,6 +123,9 @@ class FloatingMonitorService : Service() {
                 startForeground(NOTI_ID, notification)
             }
             setupFloatingViews()
+            scope.launch(Dispatchers.IO) {
+                lastPersistedSeq = runCatching { eventDao.latest(1).firstOrNull()?.seq ?: 0L }.getOrDefault(0L)
+            }
             startPolling()
             startStatusUpdater()
         } catch (e: Exception) {
@@ -815,9 +822,24 @@ class FloatingMonitorService : Service() {
     private fun pushEvents(events: List<StatusParser.SvcEvent>) {
         if (events.isEmpty()) return
         for (e in events) { while (eventBuffer.size >= 500) eventBuffer.removeFirst(); eventBuffer.addLast(e) }
+        persistEvents(events)
         renderLogs()
         renderEventList()
         evtCountTv.text = "Events: ${eventBuffer.size}"
+    }
+
+    private fun persistEvents(events: List<StatusParser.SvcEvent>) {
+        scope.launch(Dispatchers.IO) {
+            val fresh = events
+                .asSequence()
+                .filter { it.seq > lastPersistedSeq }
+                .sortedBy { it.seq }
+                .toList()
+            if (fresh.isEmpty()) return@launch
+            val now = System.nanoTime()
+            eventDao.insertAll(fresh.map { it.toEntity("", now) })
+            lastPersistedSeq = fresh.last().seq
+        }
     }
 
     private fun renderLogs() {
